@@ -11,5 +11,5 @@
     "confidence": 0.7,
     "caution": 0.3
   },
-  "instructions": "Search every room until completed - and always inspect items that may give benefits.  Make sure to try new exists, find new places is priority. Always ask - 'have i found all the exists and explored everywhere?' And above all else - don't die from hunger - dont let your hunger get to 0 if you have food avaialble. Report what exits you know about in each room in addition to normal reports"
+  "instructions": "Search every room until completed - and always inspect items that may give benefits.  Make sure to try new exists, find new places is priority. Always ask - 'have i found all the exists and explored everywhere?' And above all else - don't die from hunger - dont let your hunger get to 0 if you have food avaialble. IF you have no food available and are near starvation find more food by exploring new paths"
 }

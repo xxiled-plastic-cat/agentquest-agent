@@ -26,6 +26,15 @@ export interface AgentDecision {
   reason?: string
 }
 
+export interface DecisionContext {
+  previousResponseId?: string
+}
+
+export interface DecisionResult {
+  decision: AgentDecision
+  responseId?: string
+}
+
 export interface TurnObservation {
   turn: number
   status: "alive" | "dead"
@@ -39,12 +48,21 @@ export interface TurnObservation {
   inventory: {
     food: number
     treasure: number
+    items: Record<string, number>
   }
   visitedRooms: string[]
   knownExits: string[]
   unexploredExits: string[]
   availableActions: string[]
   discoveredPOIs: string[]
+  talkTargets: string[]
+  activeQuest: {
+    npcName: string
+    npcRoomId: string
+    questType: "retrieval" | "combat"
+    requiredItemId: string
+    status: "assigned" | "completed"
+  } | null
   roomsWithUnexploredExits: string
   roomsSearchExhausted: string
   worldMapText: string

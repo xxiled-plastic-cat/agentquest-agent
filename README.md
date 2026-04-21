@@ -35,6 +35,18 @@ Options:
 
 At startup, the CLI prints `Agent Instance ID: ...`. Reuse that ID in the next run to continue from the previous non-death snapshot.
 
+## LLM context and memory
+
+Decision-making uses the OpenAI Responses API with in-session chaining via `previous_response_id`.
+
+- The first turn starts without a previous response id.
+- Each subsequent turn reuses the last response id from the same run.
+- Every turn also includes world-provided memory context:
+  - prior session logbook text (capped to the most recent 30 turns)
+  - questbook memory (capped to the latest 10 entries)
+
+This combines short-term in-session context from Responses chaining with cross-session memory seeded from the world journal.
+
 ## Smoke verify (no OpenAI key needed)
 
 This deterministic check validates:

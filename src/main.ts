@@ -58,14 +58,18 @@ async function run(): Promise<void> {
   const created = await createSession(WORLD_BASE_URL, config, seed, agentInstanceId)
   let sessionId = created.sessionId
   let observation = created.observation
+  let previousResponseId: string | undefined
 
   console.log(`Session: ${sessionId}`)
   console.log(`Agent Instance ID: ${created.agentInstanceId}`)
 
   let steps = 0
   while (!observation.terminal && steps < MAX_STEPS) {
-    const decision = await decideAction(observation, config, classStrategies)
-    const stepResult = await stepSession(WORLD_BASE_URL, sessionId, decision)
+    const decisionResult = await decideAction(observation, config, classStrategies, {
+      previousResponseId,
+    })
+    previousResponseId = decisionResult.responseId
+    const stepResult = await stepSession(WORLD_BASE_URL, sessionId, decisionResult.decision)
     observation = stepResult.observation
     steps += 1
 
@@ -77,7 +81,7 @@ async function run(): Promise<void> {
       `HEALTH ${observation.health}/10  HUNGER ${observation.hunger}/10  FOOD ${observation.inventory.food}  TREASURE ${observation.inventory.treasure}`
     )
     console.log(`RESULT ${stepResult.lastResult}`)
-    if (decision.reason) console.log(`REASON ${decision.reason}`)
+    if (decisionResult.decision.reason) console.log(`REASON ${decisionResult.decision.reason}`)
     if (stepResult.fallbackApplied) {
       console.log("NOTE World service applied fallback validation.")
     }

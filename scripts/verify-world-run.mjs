@@ -9,7 +9,10 @@ const repoRoot = resolve(__dirname, "..");
 const defaultConfigPath = resolve(repoRoot, "agents", "agent_treasure_hunter.json");
 
 const WORLD_BASE_URL = process.env.WORLD_BASE_URL ?? "http://localhost:8787";
-const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? "20", 10);
+const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? "30", 10);
+const QUEST_GIVER_NAME = "Eldra Moonwell";
+const REQUIRED_ITEM_ID = "bruswick_seal";
+const REWARD_ITEM_ID = "moonwell_charm";
 
 function parseArgs(argv) {
   const out = {
@@ -46,17 +49,40 @@ async function checkHealth() {
 
 function chooseDeterministicDecision(observation) {
   if (observation.terminal) return null;
+  const itemCount = observation.inventory?.items?.[REQUIRED_ITEM_ID] ?? 0;
+  const rewardItemCount = observation.inventory?.items?.[REWARD_ITEM_ID] ?? 0;
+  const hasActiveQuest = !!observation.activeQuest;
+  const canTalk = observation.availableActions.includes("talk");
+  const canSearch = observation.availableActions.includes("search");
 
-  if (observation.currentRoom === "HL002" && observation.discoveredPOIs.includes("rusty chest")) {
+  if (observation.currentRoom === "HL001" && canTalk && !hasActiveQuest && rewardItemCount === 0) {
     return {
       action: "action",
-      actionName: "inspect",
-      target: "rusty chest",
-      reason: "Smoke-test target: inspect chest for item handling.",
+      actionName: "talk",
+      target: QUEST_GIVER_NAME,
+      reason: "Smoke-test: acquire the starter retrieval quest.",
     };
   }
 
-  if (observation.availableActions.includes("search")) {
+  if (observation.currentRoom === "HL001" && canTalk && itemCount > 0) {
+    return {
+      action: "action",
+      actionName: "talk",
+      target: QUEST_GIVER_NAME,
+      reason: "Smoke-test: turn in required quest item for reward.",
+    };
+  }
+
+  if (observation.currentRoom === "BC001" && observation.discoveredPOIs.includes("torn banner") && itemCount <= 0) {
+    return {
+      action: "action",
+      actionName: "inspect",
+      target: "torn banner",
+      reason: "Smoke-test target: retrieve quest item from castle.",
+    };
+  }
+
+  if (canSearch) {
     return {
       action: "action",
       actionName: "search",
@@ -64,11 +90,19 @@ function chooseDeterministicDecision(observation) {
     };
   }
 
-  if (observation.currentRoom === "HL001" && observation.knownExits.includes("east")) {
+  if (observation.currentRoom === "HL001" && observation.knownExits.includes("north") && itemCount <= 0) {
     return {
       action: "move",
-      direction: "east",
-      reason: "Smoke-test route: move to cave.",
+      direction: "north",
+      reason: "Smoke-test route: move to castle for quest item.",
+    };
+  }
+
+  if (observation.currentRoom === "BC001" && observation.knownExits.includes("south") && itemCount > 0) {
+    return {
+      action: "move",
+      direction: "south",
+      reason: "Smoke-test route: return to quest giver with item.",
     };
   }
 
@@ -140,9 +174,25 @@ async function run() {
     );
   }
 
+  const finalTreasure = observation.inventory?.treasure ?? 0;
+  const finalItems = observation.inventory?.items ?? {};
+  const rewardItemCount = finalItems[REWARD_ITEM_ID] ?? 0;
+  const requiredItemRemaining = finalItems[REQUIRED_ITEM_ID] ?? 0;
+
+  if (finalTreasure < 2) {
+    throw new Error(`Expected treasure reward >= 2, got ${finalTreasure}.`);
+  }
+  if (rewardItemCount < 1) {
+    throw new Error(`Expected reward item ${REWARD_ITEM_ID}, got ${rewardItemCount}.`);
+  }
+  if (requiredItemRemaining !== 0) {
+    throw new Error(`Expected ${REQUIRED_ITEM_ID} to be consumed on turn-in, got ${requiredItemRemaining}.`);
+  }
+
   console.log(`End reason: ${observation.endReason ?? "unknown"}`);
-  console.log(`Treasure: ${observation.inventory?.treasure ?? 0}`);
-  console.log("Smoke test passed: session creation and deterministic stepping confirmed.");
+  console.log(`Treasure: ${finalTreasure}`);
+  console.log(`Items: ${JSON.stringify(finalItems)}`);
+  console.log("Smoke test passed: quest giver talk/retrieval/turn-in flow confirmed.");
 }
 
 run().catch((err) => {
