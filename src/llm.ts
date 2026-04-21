@@ -278,7 +278,7 @@ export async function decideAction(
     ? `${observation.activeQuest.npcName} (${observation.activeQuest.npcRoomId}) | ${observation.activeQuest.questType} | retrieve ${observation.activeQuest.requiredItemId} | status: ${observation.activeQuest.status}`
     : "none"
   const activeCombatText = observation.activeCombat
-    ? `${observation.activeCombat.npcName} | HP ${observation.activeCombat.npcHealth}/${observation.activeCombat.npcMaxHealth} | AC ${observation.activeCombat.npcArmorClass}`
+    ? `${observation.activeCombat.npcName} [${observation.activeCombat.npcId}] | HP ${observation.activeCombat.npcHealth}/${observation.activeCombat.npcMaxHealth} | AC ${observation.activeCombat.npcArmorClass} | lockedByAnother=${observation.activeCombat.lockedByAnotherAgent ? "yes" : "no"}`
     : "none"
   const currentRoomSearchExhausted = observation.roomsSearchExhausted
     .split(",")
@@ -293,6 +293,7 @@ export async function decideAction(
 ${formatAgentProfile(config, classStrategies)}
 
 Turn: ${observation.turn}
+World tick: ${observation.worldTick}
 Status: ${observation.status}
 Room: ${observation.currentRoom}
 Room description: ${observation.roomDescription}
@@ -337,6 +338,7 @@ Rules:
 - Quest givers will not give more information after the first time you talk to them.
 - If active quest is retrieval, prioritize finding the item and then immediately returning it to the quest giver room.
 - If active combat is present, prioritize attack until combat ends.
+- If combat target is locked by another agent, avoid attack spam and choose another valid non-combat action.
 - Avoid loops and repeated no-progress actions.
 - Return JSON only.
 - For move decisions, direction must be one of Available moves.

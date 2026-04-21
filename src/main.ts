@@ -74,7 +74,7 @@ async function run(): Promise<void> {
     steps += 1
 
     console.log("")
-    console.log(`TURN ${observation.turn}`)
+    console.log(`TURN ${observation.turn} (WORLD TICK ${observation.worldTick})`)
     console.log(`ROOM ${observation.currentRoom}`)
     console.log(`KNOWN EXITS ${observation.knownExits.join(", ") || "none"}`)
     console.log(

@@ -37,6 +37,7 @@ export interface DecisionResult {
 
 export interface TurnObservation {
   turn: number
+  worldTick: number
   status: "alive" | "dead"
   terminal: boolean
   endReason?: "max_turns" | "death"
@@ -65,10 +66,12 @@ export interface TurnObservation {
     status: "assigned" | "completed"
   } | null
   activeCombat: {
+    npcId: string
     npcName: string
     npcHealth: number
     npcMaxHealth: number
     npcArmorClass: number
+    lockedByAnotherAgent: boolean
   } | null
   roomsWithUnexploredExits: string
   roomsSearchExhausted: string
@@ -91,6 +94,8 @@ export interface SessionStepResponse {
   observation: TurnObservation
   lastResult: string
   fallbackApplied: boolean
+  intentAccepted: boolean
+  rejectReason?: string
 }
 
 export interface QuestbookEntry {
