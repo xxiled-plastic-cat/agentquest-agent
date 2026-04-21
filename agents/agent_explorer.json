@@ -1,0 +1,15 @@
+{
+  "name": "Rook",
+  "class": "explorer",
+  "abilities": {
+    "intelligence": 5,
+    "perception": 8,
+    "endurance": 4,
+    "agility": 3
+  },
+  "personality": {
+    "confidence": 0.7,
+    "caution": 0.3
+  },
+  "instructions": "Search every room until completed - and always inspect items that may give benefits. prefer going east or west first"
+}

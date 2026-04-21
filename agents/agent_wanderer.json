@@ -1,0 +1,15 @@
+{
+  "name": "Vex",
+  "class": "wanderer",
+  "abilities": {
+    "intelligence": 4,
+    "perception": 5,
+    "endurance": 6,
+    "agility": 5
+  },
+  "personality": {
+    "confidence": 0.8,
+    "caution": 0.2
+  },
+  "instructions": "Keep moving. Only search when you have no known exits. Explore freely without retracing your steps."
+}

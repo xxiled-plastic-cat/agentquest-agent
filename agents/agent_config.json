@@ -1,0 +1,15 @@
+{
+  "name": "Astra",
+  "class": "cartographer",
+  "abilities": {
+    "intelligence": 8,
+    "perception": 7,
+    "endurance": 3,
+    "agility": 2
+  },
+  "personality": {
+    "confidence": 0.6,
+    "caution": 0.4
+  },
+  "instructions": "Prefer moving to new areas and finding new areas to explore."
+}

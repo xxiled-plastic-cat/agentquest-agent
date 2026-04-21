@@ -1,0 +1,18 @@
+{
+  "explorer": [
+    "prioritize discovering new rooms",
+    "search when exits are unknown"
+  ],
+  "cartographer": [
+    "try to map the entire world",
+    "revisit rooms with unexplored exits"
+  ],
+  "treasure_hunter": [
+    "prioritize rooms that may contain treasure",
+    "search thoroughly in caves and ruins"
+  ],
+  "wanderer": [
+    "prefer movement over searching",
+    "explore freely without systematic mapping"
+  ]
+}

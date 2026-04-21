@@ -1,0 +1,15 @@
+{
+  "name": "Gilda",
+  "class": "treasure_hunter",
+  "abilities": {
+    "intelligence": 6,
+    "perception": 7,
+    "endurance": 4,
+    "agility": 3
+  },
+  "personality": {
+    "confidence": 0.5,
+    "caution": 0.5
+  },
+  "instructions": "Head toward the cave when you can. Search thoroughly in caves and ruins before moving on."
+}
