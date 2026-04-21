@@ -30,8 +30,9 @@ export interface TurnObservation {
   turn: number
   status: "alive" | "dead"
   terminal: boolean
-  endReason?: "max_turns" | "death" | "treasure"
+  endReason?: "max_turns" | "death"
   currentRoom: string
+  currentRoomName: string
   roomDescription: string
   health: number
   hunger: number
@@ -48,11 +49,14 @@ export interface TurnObservation {
   roomsSearchExhausted: string
   worldMapText: string
   survivalStatusText: string
+  lastSessionLogbook: string
+  questbook: string
 }
 
 export interface SessionCreateResponse {
   apiVersion: string
   sessionId: string
+  agentInstanceId: string
   observation: TurnObservation
 }
 
@@ -62,4 +66,43 @@ export interface SessionStepResponse {
   observation: TurnObservation
   lastResult: string
   fallbackApplied: boolean
+}
+
+export interface QuestbookEntry {
+  sessionId: string
+  completedAt: string
+  endReason: "max_turns" | "death"
+  turns: number
+  explorationPoints: number
+  exitsDiscovered: number
+  roomsVisited: string[]
+  itemsFound: string[]
+  importantFindings: string[]
+  chronicleEntry?: string
+}
+
+export interface AgentJournal {
+  agentInstanceId: string
+  agentMemoryKey: string
+  lastSessionLogbook: Array<{
+    turn: number
+    room: string
+    roomName: string
+    action: string
+    resultSummary: string
+    reason?: string
+    health: number
+    hunger: number
+    food: number
+    treasure: number
+  }>
+  questbook: QuestbookEntry[]
+}
+
+export interface AgentJournalResponse {
+  agentInstanceId: string
+  agentMemoryKey: string
+  journal: AgentJournal
+  lastSessionLogbook: string
+  questbook: string
 }

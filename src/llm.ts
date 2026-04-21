@@ -1,5 +1,5 @@
 import OpenAI from "openai"
-import type { AgentConfig, AgentDecision, TurnObservation } from "./types.js"
+import type { AgentConfig, AgentDecision, QuestbookEntry, TurnObservation } from "./types.js"
 
 const apiKey = process.env.OPENAI_API_KEY?.trim()
 const openai = apiKey ? new OpenAI({ apiKey }) : null
@@ -119,7 +119,7 @@ export async function decideAction(
   const availableActions =
     observation.availableActions.length > 0 ? observation.availableActions.join(", ") : "none"
 
-  const prompt = `You are an autonomous AgentQuest explorer.
+  const prompt = `You are an explorer in the world of Idacron. Survival is key. Fame, glory and riches will only go to those who survive.
 
 ${formatAgentProfile(config, classStrategies)}
 
@@ -163,7 +163,7 @@ Response formats:
       const completion = await openai.chat.completions.create({
         model: MODEL,
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 220,
+        max_completion_tokens: 220,
       })
       const content = completion.choices[0]?.message?.content
       if (content) decision = parseDecision(content)
@@ -178,4 +178,60 @@ Response formats:
     return decision
   }
   return randomValidDecision(observation)
+}
+
+function bulletList(values: string[]): string {
+  return values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : "- None"
+}
+
+export async function generateQuestChronicle(
+  day: number,
+  entry: QuestbookEntry,
+  config: AgentConfig,
+  lastSessionLogbookText: string
+): Promise<string> {
+  const fallback = [
+    `Day ${day}. ${entry.endReason === "death" ? "The adventurer fell before nightfall." : "The adventurer endured another hard day."}`,
+    `Turns: ${entry.turns}. Exploration points: ${entry.explorationPoints}. Exits discovered: ${entry.exitsDiscovered}.`,
+  ].join(" ")
+
+  if (!openai) {
+    return fallback
+  }
+
+  const prompt = `Write a short fantasy quest chronicle entry (1-2 paragraphs) for Day ${day}.
+Use plain text only (no markdown), keep it vivid but grounded, and stay strictly consistent with the facts.
+
+Adventurer: ${config.name}
+Class: ${config.class}
+End reason: ${entry.endReason}
+Turns: ${entry.turns}
+Exploration points: ${entry.explorationPoints}
+Exits discovered: ${entry.exitsDiscovered}
+
+Rooms visited:
+${bulletList(entry.roomsVisited)}
+
+Items found:
+${bulletList(entry.itemsFound)}
+
+Important findings:
+${bulletList(entry.importantFindings)}
+
+Session turn log:
+${lastSessionLogbookText || "No turn log available."}
+`
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [{ role: "user", content: prompt }],
+      max_completion_tokens: 260,
+    })
+    const content = completion.choices[0]?.message?.content?.trim()
+    return content || fallback
+  } catch (err) {
+    console.error("Quest chronicle generation failed:", err)
+    return fallback
+  }
 }

@@ -18,6 +18,8 @@ Set environment values:
 - `WORLD_BASE_URL` (default `http://localhost:8787`)
 - `MAX_STEPS` (default `80`)
 
+At session end, the agent uses its own OpenAI key to generate a Day entry for the questlog and sends it to the world service.
+
 ## Run
 
 ```bash
@@ -29,6 +31,9 @@ Options:
 
 - `--config=agents/agent_config.json`
 - `--seed=42`
+- `--agent-instance-id=<uuid>` (continue an existing agent lineage)
+
+At startup, the CLI prints `Agent Instance ID: ...`. Reuse that ID in the next run to continue from the previous non-death snapshot.
 
 ## Smoke verify (no OpenAI key needed)
 
@@ -56,4 +61,6 @@ The world service is expected to implement:
 
 - `POST /sessions`
 - `POST /sessions/:id/step`
+- `GET /agents/:agentInstanceId/journal`
+- `POST /agents/:agentInstanceId/questbook-chronicle`
 - `GET /health`
