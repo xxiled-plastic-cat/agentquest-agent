@@ -231,7 +231,7 @@ function formatAgentProfile(config: AgentConfig, classStrategies: Record<string,
     "",
     "Abilities",
     `- Intelligence: ${config.abilities.intelligence}`,
-    `- Perception: ${config.abilities.perception}`,
+    `- Strength: ${config.abilities.strength}`,
     `- Endurance: ${config.abilities.endurance}`,
     `- Agility: ${config.abilities.agility}`,
     "",
@@ -277,6 +277,9 @@ export async function decideAction(
   const activeQuestText = observation.activeQuest
     ? `${observation.activeQuest.npcName} (${observation.activeQuest.npcRoomId}) | ${observation.activeQuest.questType} | retrieve ${observation.activeQuest.requiredItemId} | status: ${observation.activeQuest.status}`
     : "none"
+  const activeCombatText = observation.activeCombat
+    ? `${observation.activeCombat.npcName} | HP ${observation.activeCombat.npcHealth}/${observation.activeCombat.npcMaxHealth} | AC ${observation.activeCombat.npcArmorClass}`
+    : "none"
   const currentRoomSearchExhausted = observation.roomsSearchExhausted
     .split(",")
     .map((roomId) => roomId.trim())
@@ -294,7 +297,7 @@ Status: ${observation.status}
 Room: ${observation.currentRoom}
 Room description: ${observation.roomDescription}
 
-Health: ${observation.health}/10
+Health: ${observation.health}/${observation.maxHealth}
 Hunger: ${observation.hunger}/10
 Food: ${observation.inventory.food}
 Treasure: ${observation.inventory.treasure}
@@ -306,6 +309,7 @@ Unexplored exits from here: ${unexploredExits}
 Discovered things to inspect: ${discoveredThings}
 Talk targets here: ${talkTargets}
 Active quest: ${activeQuestText}
+Active combat: ${activeCombatText}
 Rooms where search found nothing: ${observation.roomsSearchExhausted}
 Current room search exhausted: ${currentRoomSearchExhausted ? "yes" : "no"}
 Rooms with unexplored exits:\n${observation.roomsWithUnexploredExits}
@@ -332,6 +336,7 @@ Rules:
 - If talk targets are present and no active quest, talk to an NPC.
 - Quest givers will not give more information after the first time you talk to them.
 - If active quest is retrieval, prioritize finding the item and then immediately returning it to the quest giver room.
+- If active combat is present, prioritize attack until combat ends.
 - Avoid loops and repeated no-progress actions.
 - Return JSON only.
 - For move decisions, direction must be one of Available moves.
@@ -341,6 +346,7 @@ Response formats:
 { "action": "action", "actionName": "search", "reason": "..." }
 { "action": "action", "actionName": "inspect", "target": "<exact discovered thing name>", "reason": "..." }
 { "action": "action", "actionName": "talk", "target": "<exact NPC name>", "reason": "..." }
+{ "action": "action", "actionName": "attack", "reason": "..." }
 { "action": "action", "actionName": "eat", "reason": "..." }`
 
   let decision: AgentDecision | null = null

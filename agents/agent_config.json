@@ -2,10 +2,10 @@
   "name": "Astra",
   "class": "cartographer",
   "abilities": {
-    "intelligence": 8,
-    "perception": 7,
-    "endurance": 3,
-    "agility": 2
+    "intelligence": 15,
+    "strength": 12,
+    "endurance": 14,
+    "agility": 14
   },
   "personality": {
     "confidence": 0.6,

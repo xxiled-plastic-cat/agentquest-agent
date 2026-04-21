@@ -8,14 +8,38 @@ const AGENTS_DIR = join(__dirname, "..", "agents")
 const DEFAULT_CONFIG_PATH = join(AGENTS_DIR, "agent_config.json")
 const DEFAULT_CLASSES_PATH = join(AGENTS_DIR, "classes.json")
 
-const ABILITY_NAMES = ["intelligence", "perception", "endurance", "agility"] as const
-const ABILITY_TOTAL = 20
+const ABILITY_NAMES = ["intelligence", "strength", "endurance", "agility"] as const
+const ABILITY_POINT_BUY_POOL = 27
+const ABILITY_MIN_SCORE = 8
+const ABILITY_MAX_SCORE = 15
+
+function getPointBuyCost(score: number): number {
+  if (score < ABILITY_MIN_SCORE || score > ABILITY_MAX_SCORE) {
+    throw new Error(
+      `Ability scores must be between ${ABILITY_MIN_SCORE} and ${ABILITY_MAX_SCORE} for point buy`
+    )
+  }
+  const costs: Record<number, number> = {
+    8: 0,
+    9: 1,
+    10: 2,
+    11: 3,
+    12: 4,
+    13: 5,
+    14: 7,
+    15: 9,
+  }
+  return costs[score]
+}
 
 function isAgentAbilities(v: unknown): v is AgentAbilities {
   if (!v || typeof v !== "object") return false
   const o = v as Record<string, unknown>
   for (const key of ABILITY_NAMES) {
-    if (typeof o[key] !== "number" || (o[key] as number) < 0) return false
+    if (typeof o[key] !== "number") return false
+    const value = o[key] as number
+    if (!Number.isInteger(value)) return false
+    if (value < ABILITY_MIN_SCORE || value > ABILITY_MAX_SCORE) return false
   }
   return true
 }
@@ -43,9 +67,11 @@ function validateAgentConfig(raw: unknown): AgentConfig {
     throw new Error(`Agent config 'abilities' must include: ${ABILITY_NAMES.join(", ")}`)
   }
   const abilities = o.abilities as AgentAbilities
-  const total = ABILITY_NAMES.reduce((sum, key) => sum + abilities[key], 0)
-  if (total !== ABILITY_TOTAL) {
-    throw new Error(`Ability points total must equal ${ABILITY_TOTAL}, got ${total}`)
+  const totalPointBuyCost = ABILITY_NAMES.reduce((sum, key) => sum + getPointBuyCost(abilities[key]), 0)
+  if (totalPointBuyCost !== ABILITY_POINT_BUY_POOL) {
+    throw new Error(
+      `Ability point-buy cost must equal ${ABILITY_POINT_BUY_POOL}, got ${totalPointBuyCost}`
+    )
   }
   if (!isAgentPersonality(o.personality)) {
     throw new Error("Agent config 'personality' must include confidence and caution (0-1)")

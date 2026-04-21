@@ -1,6 +1,6 @@
 export interface AgentAbilities {
   intelligence: number
-  perception: number
+  strength: number
   endurance: number
   agility: number
 }
@@ -43,6 +43,7 @@ export interface TurnObservation {
   currentRoom: string
   currentRoomName: string
   roomDescription: string
+  maxHealth: number
   health: number
   hunger: number
   inventory: {
@@ -62,6 +63,12 @@ export interface TurnObservation {
     questType: "retrieval" | "combat"
     requiredItemId: string
     status: "assigned" | "completed"
+  } | null
+  activeCombat: {
+    npcName: string
+    npcHealth: number
+    npcMaxHealth: number
+    npcArmorClass: number
   } | null
   roomsWithUnexploredExits: string
   roomsSearchExhausted: string

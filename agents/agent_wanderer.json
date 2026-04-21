@@ -2,10 +2,10 @@
   "name": "Vex",
   "class": "wanderer",
   "abilities": {
-    "intelligence": 4,
-    "perception": 5,
-    "endurance": 6,
-    "agility": 5
+    "intelligence": 10,
+    "strength": 14,
+    "endurance": 15,
+    "agility": 15
   },
   "personality": {
     "confidence": 0.8,

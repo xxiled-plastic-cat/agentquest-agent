@@ -2,10 +2,10 @@
   "name": "Thomas",
   "class": "explorer",
   "abilities": {
-    "intelligence": 5,
-    "perception": 8,
-    "endurance": 4,
-    "agility": 3
+    "intelligence": 10,
+    "strength": 15,
+    "endurance": 15,
+    "agility": 14
   },
   "personality": {
     "confidence": 0.7,

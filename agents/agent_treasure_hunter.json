@@ -2,10 +2,10 @@
   "name": "Gilda",
   "class": "treasure_hunter",
   "abilities": {
-    "intelligence": 6,
-    "perception": 7,
-    "endurance": 4,
-    "agility": 3
+    "intelligence": 15,
+    "strength": 14,
+    "endurance": 10,
+    "agility": 15
   },
   "personality": {
     "confidence": 0.5,

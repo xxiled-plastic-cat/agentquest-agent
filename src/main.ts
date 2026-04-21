@@ -78,7 +78,7 @@ async function run(): Promise<void> {
     console.log(`ROOM ${observation.currentRoom}`)
     console.log(`KNOWN EXITS ${observation.knownExits.join(", ") || "none"}`)
     console.log(
-      `HEALTH ${observation.health}/10  HUNGER ${observation.hunger}/10  FOOD ${observation.inventory.food}  TREASURE ${observation.inventory.treasure}`
+      `HEALTH ${observation.health}/${observation.maxHealth}  HUNGER ${observation.hunger}/10  FOOD ${observation.inventory.food}  TREASURE ${observation.inventory.treasure}`
     )
     console.log(`RESULT ${stepResult.lastResult}`)
     if (decisionResult.decision.reason) console.log(`REASON ${decisionResult.decision.reason}`)
