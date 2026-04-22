@@ -12,6 +12,25 @@ const ABILITY_NAMES = ["intelligence", "strength", "endurance", "agility"] as co
 const ABILITY_POINT_BUY_POOL = 27
 const ABILITY_MIN_SCORE = 8
 const ABILITY_MAX_SCORE = 15
+const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 200
+const DISALLOWED_INSTRUCTION_RULES: Array<{ pattern: RegExp; reason: string }> = [
+  {
+    pattern: /\b(ignore|disregard|forget|override|bypass)\b.{0,40}\b(instructions?|rules?|prompts?)\b/i,
+    reason: "instruction override language",
+  },
+  {
+    pattern: /\b(system prompt|developer message|hidden prompt|jailbreak)\b/i,
+    reason: "prompt-hijacking language",
+  },
+  {
+    pattern: /\b(you are (chatgpt|an ai|an assistant)|act as)\b/i,
+    reason: "role reassignment language",
+  },
+  {
+    pattern: /\b(recipe|poem|joke|story)\b/i,
+    reason: "off-game content request",
+  },
+]
 
 function getPointBuyCost(score: number): number {
   if (score < ABILITY_MIN_SCORE || score > ABILITY_MAX_SCORE) {
@@ -52,6 +71,28 @@ function isAgentPersonality(v: unknown): v is AgentPersonality {
   return typeof c === "number" && c >= 0 && c <= 1 && typeof w === "number" && w >= 0 && w <= 1
 }
 
+function validateCustomInstructions(raw: unknown): string | undefined {
+  if (raw == null) return undefined
+  if (typeof raw !== "string") {
+    throw new Error("Agent config 'instructions' must be a string when provided")
+  }
+  const instructions = raw.trim()
+  if (!instructions) return undefined
+  if (instructions.length > MAX_CUSTOM_INSTRUCTIONS_LENGTH) {
+    throw new Error(
+      `Agent config 'instructions' must be ${MAX_CUSTOM_INSTRUCTIONS_LENGTH} characters or fewer`
+    )
+  }
+  for (const rule of DISALLOWED_INSTRUCTION_RULES) {
+    if (rule.pattern.test(instructions)) {
+      throw new Error(
+        `Agent config 'instructions' contains disallowed content (${rule.reason}). Keep instructions focused on in-world behavior.`
+      )
+    }
+  }
+  return instructions
+}
+
 function validateAgentConfig(raw: unknown): AgentConfig {
   if (!raw || typeof raw !== "object") {
     throw new Error("Agent config must be a JSON object")
@@ -82,7 +123,7 @@ function validateAgentConfig(raw: unknown): AgentConfig {
     class: o.class.trim(),
     abilities,
     personality: o.personality as AgentPersonality,
-    instructions: typeof o.instructions === "string" ? o.instructions : undefined,
+    instructions: validateCustomInstructions(o.instructions),
   }
 }
 
