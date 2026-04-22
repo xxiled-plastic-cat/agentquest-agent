@@ -13,6 +13,8 @@ const openai = apiKey ? new OpenAI({ apiKey }) : null
 const MODEL = process.env.MODEL ?? "gpt-4.1-mini"
 const RATE_LIMIT_MAX_RETRIES = parseInt(process.env.RATE_LIMIT_MAX_RETRIES ?? "2", 10)
 const RATE_LIMIT_DEFAULT_WAIT_MS = 4000
+const FOOD_ITEM_ID = "ration"
+const TREASURE_ITEM_ID = "coin_pouch"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -90,9 +92,20 @@ function parseDecision(raw: string): AgentDecision | null {
 
 function randomValidDecision(observation: TurnObservation): AgentDecision {
   const random = Math.random
-  const safeActions = observation.availableActions.filter(
-    (actionName) => !(actionName === "eat" && observation.inventory.food <= 0)
+  const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
+  const equippedItemIds = Object.values(observation.inventory.equipped).filter(
+    (itemId): itemId is string => typeof itemId === "string" && itemId.length > 0
   )
+  const equipableBagItems = Object.entries(observation.inventory.bag.items)
+    .filter(([, qty]) => qty > 0)
+    .map(([itemId]) => itemId)
+  const safeActions = observation.availableActions.filter((actionName) => {
+    if (actionName === "eat") return foodCount > 0
+    if (actionName === "equip") return equipableBagItems.length > 0
+    if (actionName === "unequip") return equippedItemIds.length > 0
+    if (actionName === "rest") return true
+    return true
+  })
   const moveCount = observation.knownExits.length
   const actionCount = safeActions.length
   const total = moveCount + actionCount
@@ -113,6 +126,10 @@ function randomValidDecision(observation: TurnObservation): AgentDecision {
       ? observation.discoveredPOIs[Math.floor(random() * observation.discoveredPOIs.length)]
       : actionName === "talk" && observation.talkTargets.length > 0
         ? observation.talkTargets[Math.floor(random() * observation.talkTargets.length)]
+      : actionName === "equip" && equipableBagItems.length > 0
+        ? equipableBagItems[Math.floor(random() * equipableBagItems.length)]
+      : actionName === "unequip" && equippedItemIds.length > 0
+        ? equippedItemIds[Math.floor(random() * equippedItemIds.length)]
       : undefined
   return {
     action: "action",
@@ -123,6 +140,7 @@ function randomValidDecision(observation: TurnObservation): AgentDecision {
 }
 
 function isValidDecision(decision: AgentDecision, observation: TurnObservation): boolean {
+  const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
   if (decision.action === "move") {
     return !!decision.direction && observation.knownExits.includes(decision.direction)
   }
@@ -130,8 +148,17 @@ function isValidDecision(decision: AgentDecision, observation: TurnObservation):
     if (!decision.actionName || !observation.availableActions.includes(decision.actionName)) {
       return false
     }
-    if (decision.actionName === "eat" && observation.inventory.food <= 0) {
+    if (decision.actionName === "eat" && foodCount <= 0) {
       return false
+    }
+    if (decision.actionName === "equip") {
+      return typeof decision.target === "string" && decision.target.trim().length > 0
+    }
+    if (decision.actionName === "unequip") {
+      return typeof decision.target === "string" && decision.target.trim().length > 0
+    }
+    if (decision.actionName === "rest") {
+      return true
     }
     return true
   }
@@ -193,7 +220,7 @@ function getNextDirectionToTarget(
 function getQuestTurnInDecision(observation: TurnObservation): AgentDecision | null {
   const activeQuest = observation.activeQuest
   if (!activeQuest || activeQuest.questType !== "retrieval") return null
-  const requiredCount = observation.inventory.items?.[activeQuest.requiredItemId] ?? 0
+  const requiredCount = observation.inventory.bag.items?.[activeQuest.requiredItemId] ?? 0
   if (requiredCount <= 0) return null
 
   if (observation.availableActions.includes("talk") && observation.talkTargets.includes(activeQuest.npcName)) {
@@ -269,16 +296,19 @@ export async function decideAction(
   const availableRoomActions =
     observation.availableActions.length > 0 ? observation.availableActions.join(", ") : "none"
   const talkTargets = observation.talkTargets.length > 0 ? observation.talkTargets.join(", ") : "none"
-  const inventoryItems = Object.entries(observation.inventory.items ?? {})
+  const inventoryItems = Object.entries(observation.inventory.bag.items ?? {})
     .filter(([, qty]) => qty > 0)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([itemId, qty]) => `${itemId} x${qty}`)
+    .join(", ")
+  const equippedItems = Object.entries(observation.inventory.equipped)
+    .map(([slot, itemId]) => `${slot}:${itemId ?? "empty"}`)
     .join(", ")
   const activeQuestText = observation.activeQuest
     ? `${observation.activeQuest.npcName} (${observation.activeQuest.npcRoomId}) | ${observation.activeQuest.questType} | retrieve ${observation.activeQuest.requiredItemId} | status: ${observation.activeQuest.status}`
     : "none"
   const activeCombatText = observation.activeCombat
-    ? `${observation.activeCombat.npcName} [${observation.activeCombat.npcId}] | HP ${observation.activeCombat.npcHealth}/${observation.activeCombat.npcMaxHealth} | AC ${observation.activeCombat.npcArmorClass} | lockedByAnother=${observation.activeCombat.lockedByAnotherAgent ? "yes" : "no"}`
+    ? `${observation.activeCombat.npcName} [${observation.activeCombat.npcId}] | HP ${observation.activeCombat.npcHealth}/${observation.activeCombat.npcMaxHealth} | EnemyAC ${observation.activeCombat.npcArmorClass} | YourAC ${observation.activeCombat.agentArmorClass} | lockedByAnother=${observation.activeCombat.lockedByAnotherAgent ? "yes" : "no"}`
     : "none"
   const currentRoomSearchExhausted = observation.roomsSearchExhausted
     .split(",")
@@ -287,6 +317,10 @@ export async function decideAction(
     .includes(observation.currentRoom)
   const memoryLastSession = observation.lastSessionLogbook || "No previous session logbook."
   const memoryQuestbook = observation.questbook || "No questbook entries yet."
+
+  const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
+  const treasureCount = observation.inventory.bag.items[TREASURE_ITEM_ID] ?? 0
+  const conditionText = observation.conditions.length > 0 ? observation.conditions.join(", ") : "none"
 
   const prompt = `You are an explorer in the world of Idacron. Survival is key. Fame, glory and riches will only go to those who survive.
 
@@ -298,11 +332,14 @@ Status: ${observation.status}
 Room: ${observation.currentRoom}
 Room description: ${observation.roomDescription}
 
-Health: ${observation.health}/${observation.maxHealth}
-Hunger: ${observation.hunger}/10
-Food: ${observation.inventory.food}
-Treasure: ${observation.inventory.treasure}
+Health: ${observation.vitality.health}/${observation.vitality.maxHealth}
+Stamina: ${observation.vitality.stamina}/${observation.vitality.maxStamina}
+Conditions: ${conditionText}
+Food: ${foodCount}
+Treasure: ${treasureCount}
+Bag slots: ${observation.inventory.bag.usedSlots}/${observation.inventory.bag.maxSlots}
 Items: ${inventoryItems || "none"}
+Equipped: ${equippedItems}
 
 Visited rooms: ${observation.visitedRooms.join(", ") || "none"}
 Known exits: ${availableMoves}
@@ -327,7 +364,8 @@ Available moves (movement choices): ${availableMoves}
 Available room actions: ${availableRoomActions}
 
 Rules:
-- Prioritize survival when hunger is low and food is available. 
+- Prioritize survival when stamina is low and food is available.
+- If fatigued, prioritize eating or resting when safe.
 - Prefer discovering new information (searching unexplored rooms and taking unexplored exits).
 - If search is available and current room search is not exhausted, strongly prefer search before backtracking moves.
 - Prefer inspect/search/talk actions that can reveal new information before taking already-known return paths.
@@ -339,6 +377,9 @@ Rules:
 - If active quest is retrieval, prioritize finding the item and then immediately returning it to the quest giver room.
 - If active combat is present, prioritize attack until combat ends.
 - If combat target is locked by another agent, avoid attack spam and choose another valid non-combat action.
+- Rest is only safe in rooms without living hostiles.
+- For equip action, set target to itemId or itemId:slot (for hand choices).
+- For unequip action, set target to the exact equipped itemId.
 - Avoid loops and repeated no-progress actions.
 - Return JSON only.
 - For move decisions, direction must be one of Available moves.
@@ -349,7 +390,10 @@ Response formats:
 { "action": "action", "actionName": "inspect", "target": "<exact discovered thing name>", "reason": "..." }
 { "action": "action", "actionName": "talk", "target": "<exact NPC name>", "reason": "..." }
 { "action": "action", "actionName": "attack", "reason": "..." }
-{ "action": "action", "actionName": "eat", "reason": "..." }`
+{ "action": "action", "actionName": "eat", "reason": "..." }
+{ "action": "action", "actionName": "rest", "reason": "..." }
+{ "action": "action", "actionName": "equip", "target": "<itemId or itemId:slot>", "reason": "..." }
+{ "action": "action", "actionName": "unequip", "target": "<equipped itemId>", "reason": "..." }`
 
   let decision: AgentDecision | null = null
   let responseId: string | undefined

@@ -44,13 +44,30 @@ export interface TurnObservation {
   currentRoom: string
   currentRoomName: string
   roomDescription: string
-  maxHealth: number
-  health: number
-  hunger: number
+  vitality: {
+    maxHealth: number
+    health: number
+    maxStamina: number
+    stamina: number
+  }
+  conditions: string[]
   inventory: {
-    food: number
-    treasure: number
-    items: Record<string, number>
+    bag: {
+      maxSlots: number
+      usedSlots: number
+      items: Record<string, number>
+    }
+    equipped: {
+      head: string | null
+      chest: string | null
+      arms: string | null
+      legs: string | null
+      feet: string | null
+      leftHand: string | null
+      rightHand: string | null
+      cloak: string | null
+      quiver: string | null
+    }
   }
   visitedRooms: string[]
   knownExits: string[]
@@ -71,6 +88,7 @@ export interface TurnObservation {
     npcHealth: number
     npcMaxHealth: number
     npcArmorClass: number
+    agentArmorClass: number
     lockedByAnotherAgent: boolean
   } | null
   roomsWithUnexploredExits: string
@@ -122,7 +140,8 @@ export interface AgentJournal {
     resultSummary: string
     reason?: string
     health: number
-    hunger: number
+    stamina: number
+    conditions: string[]
     food: number
     treasure: number
   }>

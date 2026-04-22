@@ -6,6 +6,8 @@ import type { AgentConfig } from "./types.js"
 
 const WORLD_BASE_URL = process.env.WORLD_BASE_URL ?? "http://localhost:8787"
 const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? "80", 10)
+const FOOD_ITEM_ID = "ration"
+const TREASURE_ITEM_ID = "coin_pouch"
 
 function parseSeed(): number | undefined {
   const arg = process.argv.find((a) => a.startsWith("--seed="))
@@ -77,8 +79,11 @@ async function run(): Promise<void> {
     console.log(`TURN ${observation.turn} (WORLD TICK ${observation.worldTick})`)
     console.log(`ROOM ${observation.currentRoom}`)
     console.log(`KNOWN EXITS ${observation.knownExits.join(", ") || "none"}`)
+    const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
+    const treasureCount = observation.inventory.bag.items[TREASURE_ITEM_ID] ?? 0
+    const conditions = observation.conditions.length > 0 ? observation.conditions.join(",") : "none"
     console.log(
-      `HEALTH ${observation.health}/${observation.maxHealth}  HUNGER ${observation.hunger}/10  FOOD ${observation.inventory.food}  TREASURE ${observation.inventory.treasure}`
+      `HEALTH ${observation.vitality.health}/${observation.vitality.maxHealth}  STAMINA ${observation.vitality.stamina}/${observation.vitality.maxStamina}  CONDITIONS ${conditions}  FOOD ${foodCount}  TREASURE ${treasureCount}  BAG ${observation.inventory.bag.usedSlots}/${observation.inventory.bag.maxSlots}`
     )
     console.log(`RESULT ${stepResult.lastResult}`)
     if (decisionResult.decision.reason) console.log(`REASON ${decisionResult.decision.reason}`)
