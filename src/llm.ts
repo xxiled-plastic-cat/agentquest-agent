@@ -288,7 +288,7 @@ export async function decideAction(
   const memoryLastSession = observation.lastSessionLogbook || "No previous session logbook."
   const memoryQuestbook = observation.questbook || "No questbook entries yet."
 
-  const prompt = `You are an explorer in the world of Idacron. Survival is key. Fame, glory and riches will only go to those who survive.
+  const prompt = `You are an explorer in the world of Ishredon. 
 
 ${formatAgentProfile(config, classStrategies)}
 
@@ -317,31 +317,24 @@ Rooms with unexplored exits:\n${observation.roomsWithUnexploredExits}
 
 World map:\n${observation.worldMapText}
 
-Last session logbook (previous session memory):
+Review your previous decisions and make sure you are not repeating yourself.
+Remember: Last session logbook (previous session memory):
 ${memoryLastSession}
 
-Questbook (longer-term memory):
+Review your Questbook (longer-term memory):
 ${memoryQuestbook}
 
 Available moves (movement choices): ${availableMoves}
 Available room actions: ${availableRoomActions}
 
+
+
 Rules:
-- Prioritize survival when hunger is low and food is available. 
-- Prefer discovering new information (searching unexplored rooms and taking unexplored exits).
-- If search is available and current room search is not exhausted, strongly prefer search before backtracking moves.
-- Prefer inspect/search/talk actions that can reveal new information before taking already-known return paths.
-- Treat movement and room actions as equally valid choices.
-- Prefer unexplored exits over previously taken return paths when choosing movement.
-- If discovered things exist, inspect them before leaving when safe.
-- If talk targets are present and no active quest, talk to an NPC.
-- Quest givers will not give more information after the first time you talk to them.
-- If active quest is retrieval, prioritize finding the item and then immediately returning it to the quest giver room.
-- If active combat is present, prioritize attack until combat ends.
-- If combat target is locked by another agent, avoid attack spam and choose another valid non-combat action.
-- Avoid loops and repeated no-progress actions.
-- Return JSON only.
-- For move decisions, direction must be one of Available moves.
+- SEARCH rooms for exits and points of interest.
+- Survive first - if your hunger reaches 0 your health will then deplete and you will die.
+- Doors/Exits in the world are hidden to begin with - you need to use the search action to find the exits. Only 1 search action is required per room to find all exists and points of interest.
+- Investigate unusual objects, locations, and characters when safe.
+- Avoid repeating no-progress behaviour or travelling to already completed areas.
 
 Response formats:
 { "action": "move", "direction": "north", "reason": "..." }
@@ -361,7 +354,7 @@ Response formats:
           instructions: "Return JSON only using one of the allowed response formats.",
           input: prompt,
           previous_response_id: context?.previousResponseId,
-          max_output_tokens: 220,
+          max_output_tokens: 1000,
           store: true,
         })
         responseId = response.id
