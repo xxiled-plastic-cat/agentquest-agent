@@ -83,7 +83,7 @@ async function run(): Promise<void> {
     const treasureCount = observation.inventory.bag.items[TREASURE_ITEM_ID] ?? 0
     const conditions = observation.conditions.length > 0 ? observation.conditions.join(",") : "none"
     console.log(
-      `HEALTH ${observation.vitality.health}/${observation.vitality.maxHealth}  STAMINA ${observation.vitality.stamina}/${observation.vitality.maxStamina}  CONDITIONS ${conditions}  FOOD ${foodCount}  TREASURE ${treasureCount}  BAG ${observation.inventory.bag.usedSlots}/${observation.inventory.bag.maxSlots}`
+      `HEALTH ${observation.vitality.health}/${observation.vitality.maxHealth}  STAMINA ${observation.vitality.stamina}/${observation.vitality.maxStamina}  CONDITIONS ${conditions}  FOOD ${foodCount}  TREASURE ${treasureCount}  MARKS ${observation.marks}  BAG ${observation.inventory.bag.usedSlots}/${observation.inventory.bag.maxSlots}`
     )
     console.log(`RESULT ${stepResult.lastResult}`)
     if (decisionResult.decision.reason) console.log(`REASON ${decisionResult.decision.reason}`)

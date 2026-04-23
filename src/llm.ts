@@ -99,11 +99,23 @@ function randomValidDecision(observation: TurnObservation): AgentDecision {
   const equipableBagItems = Object.entries(observation.inventory.bag.items)
     .filter(([, qty]) => qty > 0)
     .map(([itemId]) => itemId)
+  const buyTargets = observation.merchantOffers.flatMap((merchant) =>
+    merchant.inventory
+      .filter((entry) => entry.stock > 0 && entry.buyPriceMarks >= 0)
+      .map((entry) => `${merchant.merchantId}:${entry.itemId}:1`)
+  )
+  const sellTargets = observation.merchantOffers.flatMap((merchant) =>
+    merchant.inventory
+      .filter((entry) => (observation.inventory.bag.items[entry.itemId] ?? 0) > 0)
+      .map((entry) => `${merchant.merchantId}:${entry.itemId}:1`)
+  )
   const safeActions = observation.availableActions.filter((actionName) => {
     if (actionName === "eat") return foodCount > 0
     if (actionName === "equip") return equipableBagItems.length > 0
     if (actionName === "unequip") return equippedItemIds.length > 0
     if (actionName === "rest") return true
+    if (actionName === "buy") return buyTargets.length > 0
+    if (actionName === "sell") return sellTargets.length > 0
     return true
   })
   const moveCount = observation.knownExits.length
@@ -130,6 +142,10 @@ function randomValidDecision(observation: TurnObservation): AgentDecision {
         ? equipableBagItems[Math.floor(random() * equipableBagItems.length)]
       : actionName === "unequip" && equippedItemIds.length > 0
         ? equippedItemIds[Math.floor(random() * equippedItemIds.length)]
+      : actionName === "buy" && buyTargets.length > 0
+        ? buyTargets[Math.floor(random() * buyTargets.length)]
+      : actionName === "sell" && sellTargets.length > 0
+        ? sellTargets[Math.floor(random() * sellTargets.length)]
       : undefined
   return {
     action: "action",
@@ -159,6 +175,9 @@ function isValidDecision(decision: AgentDecision, observation: TurnObservation):
     }
     if (decision.actionName === "rest") {
       return true
+    }
+    if (decision.actionName === "buy" || decision.actionName === "sell") {
+      return typeof decision.target === "string" && decision.target.trim().split(":").length >= 2
     }
     return true
   }
@@ -320,6 +339,20 @@ export async function decideAction(
 
   const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
   const treasureCount = observation.inventory.bag.items[TREASURE_ITEM_ID] ?? 0
+  const merchantOffersText =
+    observation.merchantOffers.length > 0
+      ? observation.merchantOffers
+          .map((merchant) => {
+            const listing = merchant.inventory
+              .map(
+                (entry) =>
+                  `${entry.itemId} stock ${entry.stock}/${entry.maxStock} buy ${entry.buyPriceMarks} sell ${entry.sellPriceMarks}`
+              )
+              .join(", ")
+            return `${merchant.merchantName} [${merchant.merchantId}] marks=${merchant.balanceMarks} :: ${listing}`
+          })
+          .join("\n")
+      : "none"
   const conditionText = observation.conditions.length > 0 ? observation.conditions.join(", ") : "none"
 
   const prompt = `You are an explorer in the world of Idacron. Survival is key. Fame, glory and riches will only go to those who survive.
@@ -337,9 +370,12 @@ Stamina: ${observation.vitality.stamina}/${observation.vitality.maxStamina}
 Conditions: ${conditionText}
 Food: ${foodCount}
 Treasure: ${treasureCount}
+Marks: ${observation.marks}
 Bag slots: ${observation.inventory.bag.usedSlots}/${observation.inventory.bag.maxSlots}
 Items: ${inventoryItems || "none"}
 Equipped: ${equippedItems}
+Merchant offers:
+${merchantOffersText}
 
 Visited rooms: ${observation.visitedRooms.join(", ") || "none"}
 Known exits: ${availableMoves}
@@ -380,6 +416,7 @@ Rules:
 - Rest is only safe in rooms without living hostiles.
 - For equip action, set target to itemId or itemId:slot (for hand choices).
 - For unequip action, set target to the exact equipped itemId.
+- For buy/sell action, set target to merchantId:itemId[:quantity].
 - Avoid loops and repeated no-progress actions.
 - Return JSON only.
 - For move decisions, direction must be one of Available moves.
@@ -393,7 +430,9 @@ Response formats:
 { "action": "action", "actionName": "eat", "reason": "..." }
 { "action": "action", "actionName": "rest", "reason": "..." }
 { "action": "action", "actionName": "equip", "target": "<itemId or itemId:slot>", "reason": "..." }
-{ "action": "action", "actionName": "unequip", "target": "<equipped itemId>", "reason": "..." }`
+{ "action": "action", "actionName": "unequip", "target": "<equipped itemId>", "reason": "..." }
+{ "action": "action", "actionName": "buy", "target": "<merchantId:itemId:quantity>", "reason": "..." }
+{ "action": "action", "actionName": "sell", "target": "<merchantId:itemId:quantity>", "reason": "..." }`
 
   let decision: AgentDecision | null = null
   let responseId: string | undefined

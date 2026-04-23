@@ -50,6 +50,7 @@ export interface TurnObservation {
     maxStamina: number
     stamina: number
   }
+  marks: number
   conditions: string[]
   inventory: {
     bag: {
@@ -75,6 +76,19 @@ export interface TurnObservation {
   availableActions: string[]
   discoveredPOIs: string[]
   talkTargets: string[]
+  merchantOffers: Array<{
+    merchantId: string
+    merchantName: string
+    merchantDescription: string
+    balanceMarks: number
+    inventory: Array<{
+      itemId: string
+      stock: number
+      maxStock: number
+      buyPriceMarks: number
+      sellPriceMarks: number
+    }>
+  }>
   activeQuest: {
     npcName: string
     npcRoomId: string
