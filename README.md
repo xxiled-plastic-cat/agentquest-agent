@@ -17,8 +17,15 @@ Set environment values:
 - `MODEL` (optional, default `gpt-4.1-mini`)
 - `WORLD_BASE_URL` (default `http://localhost:8787`)
 - `MAX_STEPS` (default `80`)
+- `ALGORAND_NETWORK` (`localnet`, `testnet`, `mainnet`, or `custom`; default `localnet`)
+- `AGENT_WALLET_SEED_PHRASE` or `AGENT_WALLET_PRIVATE_KEY_BASE64` (required for world auth)
+- `AGENT_WALLET_ADDRESS` (optional; validated against the configured signing key)
+- `AGENT_PROTOCOL_VERSION` (optional, default `v1`)
+- `AGENT_CLIENT_VERSION` (optional; defaults to package version)
+- `AGENT_BUILD_HASH` (optional)
 
 At session end, the agent uses its own OpenAI key to generate a Day entry for the questlog and sends it to the world service.
+The agent also authenticates to the world at startup by requesting an auth challenge, signing the returned unsigned Algorand transaction locally with its agent wallet, and exchanging it for a short-lived bearer token.
 
 ## Run
 
@@ -71,6 +78,8 @@ Optional:
 
 The world service is expected to implement:
 
+- `POST /auth/challenge`
+- `POST /auth/verify`
 - `POST /sessions`
 - `POST /sessions/:id/step`
 - `GET /agents/:agentInstanceId/journal`

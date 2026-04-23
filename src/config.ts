@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs"
 import { join, resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { AgentAbilities, AgentConfig, AgentPersonality } from "./types.js"
+import { encodeAddress, isValidAddress, mnemonicToSecretKey } from "algosdk"
+import type { AgentAbilities, AgentConfig, AgentPersonality, AlgorandNetwork, WalletAuthConfig } from "./types.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const AGENTS_DIR = join(__dirname, "..", "agents")
 const DEFAULT_CONFIG_PATH = join(AGENTS_DIR, "agent_config.json")
 const DEFAULT_CLASSES_PATH = join(AGENTS_DIR, "classes.json")
+const PACKAGE_JSON_PATH = join(__dirname, "..", "package.json")
 
 const ABILITY_NAMES = ["intelligence", "strength", "endurance", "agility"] as const
 const ABILITY_POINT_BUY_POOL = 27
@@ -148,4 +150,61 @@ export function loadClasses(classesPath?: string): Record<string, string[]> {
     }
   }
   return out
+}
+
+function readClientVersion(): string | undefined {
+  try {
+    const packageText = readFileSync(PACKAGE_JSON_PATH, "utf-8")
+    const raw = JSON.parse(packageText) as { version?: unknown }
+    return typeof raw.version === "string" && raw.version.trim() ? raw.version.trim() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function parsePrivateKeyFromEnv(): Uint8Array {
+  const seedPhrase = process.env.AGENT_WALLET_SEED_PHRASE?.trim()
+  if (seedPhrase) {
+    return mnemonicToSecretKey(seedPhrase).sk
+  }
+  const privateKeyBase64 = process.env.AGENT_WALLET_PRIVATE_KEY_BASE64?.trim()
+  if (privateKeyBase64) {
+    const bytes = new Uint8Array(Buffer.from(privateKeyBase64, "base64"))
+    if (bytes.length !== 64) {
+      throw new Error("AGENT_WALLET_PRIVATE_KEY_BASE64 must decode to a 64-byte Algorand private key")
+    }
+    return bytes
+  }
+  throw new Error(
+    "Set AGENT_WALLET_SEED_PHRASE or AGENT_WALLET_PRIVATE_KEY_BASE64 for wallet auth"
+  )
+}
+
+function parseAlgorandNetwork(raw: string | undefined): AlgorandNetwork {
+  const normalized = raw?.trim().toLowerCase()
+  if (!normalized) return "localnet"
+  if (normalized === "localnet" || normalized === "testnet" || normalized === "mainnet" || normalized === "custom") {
+    return normalized
+  }
+  throw new Error("ALGORAND_NETWORK must be one of: localnet, testnet, mainnet, custom")
+}
+
+export function loadWalletAuthConfig(): WalletAuthConfig {
+  const privateKey = parsePrivateKeyFromEnv()
+  const derivedAddress = encodeAddress(privateKey.slice(32))
+  const configuredAddress = process.env.AGENT_WALLET_ADDRESS?.trim()
+  if (configuredAddress && !isValidAddress(configuredAddress)) {
+    throw new Error("AGENT_WALLET_ADDRESS must be a valid Algorand address")
+  }
+  if (configuredAddress && configuredAddress !== derivedAddress) {
+    throw new Error("AGENT_WALLET_ADDRESS does not match the configured wallet private key")
+  }
+  return {
+    walletAddress: configuredAddress ?? derivedAddress,
+    privateKey,
+    network: parseAlgorandNetwork(process.env.ALGORAND_NETWORK),
+    protocolVersion: process.env.AGENT_PROTOCOL_VERSION?.trim() || "v1",
+    clientVersion: process.env.AGENT_CLIENT_VERSION?.trim() || readClientVersion(),
+    buildHash: process.env.AGENT_BUILD_HASH?.trim() || undefined,
+  }
 }

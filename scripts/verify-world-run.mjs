@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { decodeUnsignedTransaction, generateAccount, signTransaction } from "algosdk";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -47,10 +48,40 @@ async function checkHealth() {
   }
 }
 
+async function authenticate() {
+  const account = generateAccount();
+  const challenge = await expectOkJson(
+    await fetch(`${WORLD_BASE_URL}/auth/challenge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        walletAddress: account.addr.toString(),
+        protocolVersion: "v1",
+        clientVersion: "verify-world-script",
+      }),
+    }),
+    "Auth challenge"
+  );
+  const txn = decodeUnsignedTransaction(Buffer.from(challenge.unsignedTransaction, "base64"));
+  const signed = signTransaction(txn, account.sk);
+  const verified = await expectOkJson(
+    await fetch(`${WORLD_BASE_URL}/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: challenge.challengeId,
+        signedTransaction: Buffer.from(signed.blob).toString("base64"),
+      }),
+    }),
+    "Auth verify"
+  );
+  return verified.accessToken;
+}
+
 function chooseDeterministicDecision(observation) {
   if (observation.terminal) return null;
-  const itemCount = observation.inventory?.items?.[REQUIRED_ITEM_ID] ?? 0;
-  const rewardItemCount = observation.inventory?.items?.[REWARD_ITEM_ID] ?? 0;
+  const itemCount = observation.inventory?.bag?.items?.[REQUIRED_ITEM_ID] ?? 0;
+  const rewardItemCount = observation.inventory?.bag?.items?.[REWARD_ITEM_ID] ?? 0;
   const hasActiveQuest = !!observation.activeQuest;
   const canTalk = observation.availableActions.includes("talk");
   const canSearch = observation.availableActions.includes("search");
@@ -129,19 +160,19 @@ function chooseDeterministicDecision(observation) {
   };
 }
 
-async function createSession(config, seed) {
+async function createSession(config, seed, accessToken) {
   const res = await fetch(`${WORLD_BASE_URL}/sessions`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ agentId: config.name, config, seed }),
   });
   return expectOkJson(res, "Create session");
 }
 
-async function stepSession(sessionId, decision) {
+async function stepSession(sessionId, decision, accessToken) {
   const res = await fetch(`${WORLD_BASE_URL}/sessions/${sessionId}/step`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ decision }),
   });
   return expectOkJson(res, "Step session");
@@ -156,8 +187,10 @@ async function run() {
   console.log(`Seed: ${seed}`);
   await checkHealth();
   console.log("Health check: OK");
+  const accessToken = await authenticate();
+  console.log("Wallet auth: OK");
 
-  const created = await createSession(config, seed);
+  const created = await createSession(config, seed, accessToken);
   const sessionId = created.sessionId;
   let observation = created.observation;
   let steps = 0;
@@ -166,7 +199,7 @@ async function run() {
   while (!observation.terminal && steps < MAX_STEPS) {
     const decision = chooseDeterministicDecision(observation);
     if (!decision) break;
-    const result = await stepSession(sessionId, decision);
+    const result = await stepSession(sessionId, decision, accessToken);
     observation = result.observation;
     steps += 1;
     console.log(
@@ -174,8 +207,8 @@ async function run() {
     );
   }
 
-  const finalTreasure = observation.inventory?.treasure ?? 0;
-  const finalItems = observation.inventory?.items ?? {};
+  const finalTreasure = observation.marks ?? 0;
+  const finalItems = observation.inventory?.bag?.items ?? {};
   const rewardItemCount = finalItems[REWARD_ITEM_ID] ?? 0;
   const requiredItemRemaining = finalItems[REQUIRED_ITEM_ID] ?? 0;
 

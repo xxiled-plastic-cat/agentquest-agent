@@ -1,5 +1,6 @@
 import "dotenv/config"
-import { loadAgentConfig, loadClasses } from "./config.js"
+import { loadAgentConfig, loadClasses, loadWalletAuthConfig } from "./config.js"
+import { WorldSessionAuth } from "./auth.js"
 import { decideAction, generateQuestChronicle } from "./llm.js"
 import { createSession, getAgentJournal, setQuestbookChronicle, stepSession } from "./world-client.js"
 import type { AgentConfig } from "./types.js"
@@ -54,10 +55,12 @@ async function run(): Promise<void> {
   const seed = parseSeed()
   const agentInstanceId = parseAgentInstanceId()
   const config = loadAgentConfig(configPath)
+  const walletAuth = loadWalletAuthConfig()
+  const worldAuth = new WorldSessionAuth(WORLD_BASE_URL, walletAuth)
   const classStrategies = loadClasses()
   printStartup(config, configPath, agentInstanceId)
 
-  const created = await createSession(WORLD_BASE_URL, config, seed, agentInstanceId)
+  const created = await createSession(WORLD_BASE_URL, config, worldAuth, seed, agentInstanceId)
   let sessionId = created.sessionId
   let observation = created.observation
   let previousResponseId: string | undefined
@@ -71,7 +74,7 @@ async function run(): Promise<void> {
       previousResponseId,
     })
     previousResponseId = decisionResult.responseId
-    const stepResult = await stepSession(WORLD_BASE_URL, sessionId, decisionResult.decision)
+    const stepResult = await stepSession(WORLD_BASE_URL, sessionId, decisionResult.decision, worldAuth)
     observation = stepResult.observation
     steps += 1
 
@@ -105,7 +108,7 @@ async function run(): Promise<void> {
           config,
           journal.lastSessionLogbook
         )
-        await setQuestbookChronicle(WORLD_BASE_URL, created.agentInstanceId, sessionId, chronicle)
+        await setQuestbookChronicle(WORLD_BASE_URL, created.agentInstanceId, sessionId, chronicle, worldAuth)
         console.log(`QUESTLOG Updated Day ${dayIndex + 1} chronicle entry.`)
       } else {
         console.warn("QUESTLOG No matching questbook session entry found; chronicle not updated.")

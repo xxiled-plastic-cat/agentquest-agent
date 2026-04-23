@@ -18,6 +18,63 @@ export interface AgentConfig {
   instructions?: string
 }
 
+export interface ClientBuildMetadata {
+  protocolVersion?: string
+  clientVersion?: string
+  buildHash?: string
+}
+
+export type AlgorandNetwork = "localnet" | "testnet" | "mainnet" | "custom"
+
+export interface WalletAuthConfig {
+  walletAddress: string
+  privateKey: Uint8Array
+  network: AlgorandNetwork
+  protocolVersion?: string
+  clientVersion?: string
+  buildHash?: string
+}
+
+export interface AuthChallengeRequest extends ClientBuildMetadata {
+  walletAddress: string
+  network?: AlgorandNetwork
+}
+
+export interface AuthChallengePayload {
+  challengeId: string
+  walletAddress: string
+  worldBaseUrl: string
+  purpose: "agentquest-session-auth"
+  network: AlgorandNetwork
+  issuedAt: string
+  expiresAt: string
+  clientVersion?: string
+  protocolVersion?: string
+  buildHash?: string
+}
+
+export interface AuthChallengeResponse {
+  apiVersion: string
+  challengeId: string
+  walletAddress: string
+  unsignedTransaction: string
+  txId: string
+  payload: AuthChallengePayload
+  expiresAt: string
+}
+
+export interface AuthVerifyRequest {
+  challengeId: string
+  signedTransaction: string
+}
+
+export interface AuthVerifyResponse {
+  apiVersion: string
+  accessToken: string
+  walletAddress: string
+  expiresAt: string
+}
+
 export interface AgentDecision {
   action: "move" | "action"
   direction?: string

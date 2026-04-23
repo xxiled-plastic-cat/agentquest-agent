@@ -5,38 +5,64 @@ import type {
   SessionCreateResponse,
   SessionStepResponse,
 } from "./types.js"
+import type { WorldSessionAuth } from "./auth.js"
+
+async function fetchWorldJson<T>(
+  url: string,
+  init: RequestInit,
+  errorLabel: string,
+  auth?: WorldSessionAuth
+): Promise<T> {
+  const headers = new Headers(init.headers)
+  if (auth) {
+    headers.set("authorization", `Bearer ${await auth.getAccessToken()}`)
+  }
+  let res = await fetch(url, { ...init, headers })
+  if (res.status === 401 && auth) {
+    headers.set("authorization", `Bearer ${await auth.getAccessToken(true)}`)
+    res = await fetch(url, { ...init, headers })
+  }
+  if (!res.ok) {
+    throw new Error(`${errorLabel}: ${res.status} ${await res.text()}`)
+  }
+  return (await res.json()) as T
+}
 
 export async function createSession(
   worldBaseUrl: string,
   config: AgentConfig,
+  auth: WorldSessionAuth,
   seed?: number,
   agentInstanceId?: string
 ): Promise<SessionCreateResponse> {
-  const res = await fetch(`${worldBaseUrl}/sessions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ agentId: config.name, agentInstanceId, config, seed }),
-  })
-  if (!res.ok) {
-    throw new Error(`World create session failed: ${res.status} ${await res.text()}`)
-  }
-  return (await res.json()) as SessionCreateResponse
+  return fetchWorldJson<SessionCreateResponse>(
+    `${worldBaseUrl}/sessions`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: config.name, agentInstanceId, config, seed }),
+    },
+    "World create session failed",
+    auth
+  )
 }
 
 export async function stepSession(
   worldBaseUrl: string,
   sessionId: string,
-  decision: AgentDecision
+  decision: AgentDecision,
+  auth: WorldSessionAuth
 ): Promise<SessionStepResponse> {
-  const res = await fetch(`${worldBaseUrl}/sessions/${sessionId}/step`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ decision }),
-  })
-  if (!res.ok) {
-    throw new Error(`World step failed: ${res.status} ${await res.text()}`)
-  }
-  return (await res.json()) as SessionStepResponse
+  return fetchWorldJson<SessionStepResponse>(
+    `${worldBaseUrl}/sessions/${sessionId}/step`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision }),
+    },
+    "World step failed",
+    auth
+  )
 }
 
 export async function getAgentJournal(
@@ -54,14 +80,17 @@ export async function setQuestbookChronicle(
   worldBaseUrl: string,
   agentInstanceId: string,
   sessionId: string,
-  chronicleEntry: string
+  chronicleEntry: string,
+  auth: WorldSessionAuth
 ): Promise<void> {
-  const res = await fetch(`${worldBaseUrl}/agents/${encodeURIComponent(agentInstanceId)}/questbook-chronicle`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sessionId, chronicleEntry }),
-  })
-  if (!res.ok) {
-    throw new Error(`World questbook update failed: ${res.status} ${await res.text()}`)
-  }
+  await fetchWorldJson<{ ok: true }>(
+    `${worldBaseUrl}/agents/${encodeURIComponent(agentInstanceId)}/questbook-chronicle`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId, chronicleEntry }),
+    },
+    "World questbook update failed",
+    auth
+  )
 }
