@@ -185,6 +185,68 @@ export interface SessionStepResponse {
   fallbackApplied: boolean
   intentAccepted: boolean
   rejectReason?: string
+  settlementTransaction?: string
+}
+
+export type PaidActionType = "move_toll" | "buy" | "sell" | "craft" | "event"
+
+export interface SplitPaymentRecipient {
+  role: "merchant" | "platform"
+  address: string
+  amount: string
+}
+
+export interface PaymentQuoteRequest {
+  actionType: PaidActionType
+  direction?: string
+  actionName?: string
+  target?: string
+  quantity?: number
+  assetId?: string
+  network?: AlgorandNetwork
+  idempotencyKey?: string
+}
+
+export interface PaymentQuoteResponse {
+  apiVersion: string
+  sessionId: string
+  quoteId: string
+  actionType: PaidActionType
+  direction?: string
+  actionName?: string
+  target?: string
+  network: AlgorandNetwork
+  assetId: string
+  split: SplitPaymentRecipient[]
+  totalAmount: string
+  nonce: string
+  expiresAt: string
+  actionFingerprint: string
+  x402Note?: string
+}
+
+export interface PaidActionExecuteRequest {
+  quoteId: string
+  idempotencyKey: string
+  actionType: PaidActionType
+  direction?: string
+  actionName?: string
+  target?: string
+}
+
+export interface SettlementProof {
+  version: "aq-settlement-proof-v1"
+  quoteId: string
+  actionFingerprint: string
+  network: AlgorandNetwork
+  assetId: string
+  payer: string
+  transaction: string
+  split: SplitPaymentRecipient[]
+  nonce: string
+  expiresAt: string
+  settledAt: string
+  signature: string
 }
 
 export interface QuestbookEntry {
