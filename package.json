@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/main.js",
     "dev": "tsc && node dist/main.js",
+    "test:paid-buy": "npm run build && node dist/paid-buy-test.js",
     "verify:world": "node scripts/verify-world-run.mjs"
   },
   "dependencies": {

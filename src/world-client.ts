@@ -2,10 +2,39 @@ import type {
   AgentJournalResponse,
   AgentConfig,
   AgentDecision,
+  PaidActionExecuteRequest,
+  PaymentQuoteRequest,
+  PaymentQuoteResponse,
   SessionCreateResponse,
   SessionStepResponse,
 } from "./types.js"
 import type { WorldSessionAuth } from "./auth.js"
+
+function parsePaymentRequired(res: Response, bodyText: string): unknown {
+  const headerValue = res.headers.get("PAYMENT-REQUIRED")
+  if (headerValue) {
+    try {
+      return JSON.parse(Buffer.from(headerValue, "base64").toString("utf-8"))
+    } catch {
+      // best effort fallthrough to body parse
+    }
+  }
+  if (bodyText.trim()) {
+    try {
+      return JSON.parse(bodyText)
+    } catch {
+      return { raw: bodyText }
+    }
+  }
+  return { error: "payment required" }
+}
+
+function extractQuoteId(paymentRequired: unknown): string | undefined {
+  const accepts = (paymentRequired as { accepts?: Array<Record<string, unknown>> })?.accepts
+  const first = Array.isArray(accepts) ? accepts[0] : undefined
+  const quoteId = first?.quoteId
+  return typeof quoteId === "string" && quoteId.trim() ? quoteId.trim() : undefined
+}
 
 async function fetchWorldJson<T>(
   url: string,
@@ -22,8 +51,35 @@ async function fetchWorldJson<T>(
     headers.set("authorization", `Bearer ${await auth.getAccessToken(true)}`)
     res = await fetch(url, { ...init, headers })
   }
+  if (auth) {
+    let quoteBoundPaymentRequired: unknown
+    let lastChallengeFingerprint: string | undefined
+    for (let i = 0; i < 3 && res.status === 402; i += 1) {
+      const body = await res.text()
+      const paymentRequired = parsePaymentRequired(res, body)
+      const challengeFingerprint = JSON.stringify(paymentRequired)
+      if (lastChallengeFingerprint && challengeFingerprint === lastChallengeFingerprint) {
+        break
+      }
+      lastChallengeFingerprint = challengeFingerprint
+      if (extractQuoteId(paymentRequired)) {
+        quoteBoundPaymentRequired = paymentRequired
+      }
+      const signature = await auth.createX402PaymentSignature(
+        quoteBoundPaymentRequired ?? paymentRequired,
+        paymentRequired
+      )
+      headers.set("PAYMENT-SIGNATURE", signature)
+      res = await fetch(url, { ...init, headers })
+    }
+  }
   if (!res.ok) {
-    throw new Error(`${errorLabel}: ${res.status} ${await res.text()}`)
+    const errorBody = await res.text()
+    const headerDump = JSON.stringify(Object.fromEntries(res.headers.entries()))
+    const detail = errorBody.trim() || "<empty body>"
+    throw new Error(
+      `${errorLabel}: ${res.status} ${res.statusText} url=${url} headers=${headerDump} body=${detail}`
+    )
   }
   return (await res.json()) as T
 }
@@ -61,6 +117,43 @@ export async function stepSession(
       body: JSON.stringify({ decision }),
     },
     "World step failed",
+    auth
+  )
+}
+
+export async function issuePaymentQuote(
+  worldBaseUrl: string,
+  sessionId: string,
+  request: PaymentQuoteRequest,
+  auth: WorldSessionAuth
+): Promise<PaymentQuoteResponse> {
+  return fetchWorldJson<PaymentQuoteResponse>(
+    `${worldBaseUrl}/sessions/${sessionId}/payments/quote`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    "Payment quote failed",
+    auth
+  )
+}
+
+export async function executePaidAction(
+  worldBaseUrl: string,
+  sessionId: string,
+  request: PaidActionExecuteRequest,
+  auth: WorldSessionAuth
+): Promise<SessionStepResponse> {
+  const quoteQuery = new URLSearchParams({ quoteId: request.quoteId }).toString()
+  return fetchWorldJson<SessionStepResponse>(
+    `${worldBaseUrl}/sessions/${sessionId}/paid-action?${quoteQuery}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    "Paid action failed",
     auth
   )
 }
