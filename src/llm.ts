@@ -560,15 +560,16 @@ Rules:
           instructions: "Choose exactly one available AgentQuest action by calling one tool.",
           input: prompt,
           tools: toOpenAiTools(actionTools) as never,
-          previous_response_id: context?.previousResponseId,
           max_output_tokens: 220,
           store: true,
         })
-        responseId = response.id
         const toolCall = getToolCall(response)
         if (toolCall) decision = decisionFromToolCall(toolCall)
         const content = response.output_text
-        if (!decision && content) decision = parseDecision(content)
+        if (!decision && content) {
+          decision = parseDecision(content)
+          responseId = response.id
+        }
         break
       } catch (err) {
         const retryDelayMs = getRateLimitRetryDelayMs(err)
@@ -606,7 +607,7 @@ export async function generateQuestChronicle(
   lastSessionLogbookText: string
 ): Promise<string> {
   const fallback = [
-    `Day ${day}. ${entry.endReason === "death" ? "The adventurer fell before nightfall." : "The adventurer endured another hard day."}`,
+    `Day ${day}. ${entry.endReason === "death" ? "I fell before nightfall." : "I endured another hard day."}`,
     `Turns: ${entry.turns}. Exploration points: ${entry.explorationPoints}. Exits discovered: ${entry.exitsDiscovered}.`,
   ].join(" ")
 
@@ -614,11 +615,21 @@ export async function generateQuestChronicle(
     return fallback
   }
 
+  const playerInstructions =
+    typeof config.instructions === "string" && config.instructions.trim()
+      ? config.instructions.trim()
+      : "None provided."
+
   const prompt = `Write a short fantasy quest chronicle entry (1-2 paragraphs) for Day ${day}.
 Use plain text only (no markdown), keep it vivid but grounded, and stay strictly consistent with the facts.
+Write in first-person singular from the adventurer's perspective ("I", "me", "my"), never third-person.
+Reflect the player instructions/personality notes when phrasing tone and priorities, but do not invent facts.
 
 Adventurer: ${config.name}
 Class: ${config.class}
+Player instructions:
+${playerInstructions}
+
 End reason: ${entry.endReason}
 Turns: ${entry.turns}
 Exploration points: ${entry.explorationPoints}

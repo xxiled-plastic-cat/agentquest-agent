@@ -1,13 +1,10 @@
 import "dotenv/config"
-import { randomUUID } from "node:crypto"
 import { loadAgentConfig, loadClasses, loadWalletAuthConfig } from "./config.js"
 import { WorldSessionAuth } from "./auth.js"
 import { decideAction, generateQuestChronicle } from "./llm.js"
 import {
   createSession,
-  executePaidAction,
   getAgentJournal,
-  issuePaymentQuote,
   setQuestbookChronicle,
   stepSession,
 } from "./world-client.js"
@@ -17,14 +14,6 @@ const WORLD_BASE_URL = process.env.WORLD_BASE_URL ?? "http://localhost:8787"
 const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? "80", 10)
 const FOOD_ITEM_ID = "ration"
 const TREASURE_ITEM_ID = "coin_pouch"
-const PAID_ACTIONS = new Set(["buy", "sell", "craft"])
-
-function getPaidActionType(decision: { action: "move" | "action"; actionName?: string }): "move_toll" | "buy" | "sell" | "craft" | "event" | null {
-  if (decision.action === "move") return "move_toll"
-  if (!decision.actionName) return null
-  if (PAID_ACTIONS.has(decision.actionName)) return decision.actionName as "buy" | "sell" | "craft"
-  return null
-}
 
 function parseSeed(): number | undefined {
   const arg = process.argv.find((a) => a.startsWith("--seed="))
@@ -90,35 +79,7 @@ async function run(): Promise<void> {
       previousResponseId,
     })
     previousResponseId = decisionResult.responseId
-    const paidActionType = getPaidActionType(decisionResult.decision)
-    const stepResult = paidActionType
-      ? await (async () => {
-          const quote = await issuePaymentQuote(
-            WORLD_BASE_URL,
-            sessionId,
-            {
-              actionType: paidActionType,
-              direction: decisionResult.decision.direction,
-              actionName: decisionResult.decision.actionName,
-              target: decisionResult.decision.target,
-            },
-            worldAuth
-          )
-          return executePaidAction(
-            WORLD_BASE_URL,
-            sessionId,
-            {
-              quoteId: quote.quoteId,
-              idempotencyKey: randomUUID(),
-              actionType: paidActionType,
-              direction: decisionResult.decision.direction,
-              actionName: decisionResult.decision.actionName,
-              target: decisionResult.decision.target,
-            },
-            worldAuth
-          )
-        })()
-      : await stepSession(WORLD_BASE_URL, sessionId, decisionResult.decision, worldAuth)
+    const stepResult = await stepSession(WORLD_BASE_URL, sessionId, decisionResult.decision, worldAuth)
     observation = stepResult.observation
     steps += 1
 
