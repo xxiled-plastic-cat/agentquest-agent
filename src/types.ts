@@ -92,6 +92,58 @@ export interface DecisionResult {
   responseId?: string
 }
 
+export type ActionToolName =
+  | "move"
+  | "search"
+  | "inspect"
+  | "talk"
+  | "attack"
+  | "eat"
+  | "rest"
+  | "equip"
+  | "unequip"
+  | "buy"
+  | "sell"
+  | "craft"
+  | "use"
+  | "mine"
+  | "chop"
+  | "forage"
+  | "fish"
+  | "salvage"
+
+export interface ActionToolParameterSchema {
+  type: "object"
+  properties: Record<
+    string,
+    {
+      type: "string" | "number" | "integer" | "boolean"
+      description?: string
+      enum?: Array<string | number | boolean>
+      minimum?: number
+      maximum?: number
+    }
+  >
+  required?: string[]
+  additionalProperties?: boolean
+}
+
+export interface ActionToolTarget {
+  id: string
+  name: string
+  description?: string
+  metadata?: Record<string, string | number | boolean>
+}
+
+export interface ActionToolDefinition {
+  name: ActionToolName
+  description: string
+  parameters: ActionToolParameterSchema
+  validTargets?: ActionToolTarget[]
+  requiresPayment: boolean
+  consumesTurn: boolean
+}
+
 export interface TurnObservation {
   turn: number
   worldTick: number
@@ -132,6 +184,22 @@ export interface TurnObservation {
   unexploredExits: string[]
   availableActions: string[]
   discoveredPOIs: string[]
+  resourceNodes: Array<{
+    id: string
+    name: string
+    actionType: "mine" | "chop" | "forage" | "fish" | "salvage"
+  }>
+  craftingRecipes: Array<{
+    id: string
+    name: string
+    outputItemId: string
+    outputQuantity: number
+    ingredients: Array<{
+      itemId: string
+      quantity: number
+    }>
+  }>
+  actionTools: ActionToolDefinition[]
   talkTargets: string[]
   merchantOffers: Array<{
     merchantId: string
