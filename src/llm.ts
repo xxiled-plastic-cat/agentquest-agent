@@ -97,117 +97,138 @@ interface ToolCallResult {
   arguments: Record<string, unknown>
 }
 
+function getToolByName(observation: TurnObservation, name: string): ActionToolDefinition | undefined {
+  return (observation.actionTools ?? []).find((tool) => tool.name === name)
+}
+
+function getToolEnumValues(tool: ActionToolDefinition, parameterName: string): string[] {
+  const parameter = tool.parameters.properties?.[parameterName]
+  if (!parameter?.enum) return []
+  return parameter.enum.filter((value): value is string => typeof value === "string")
+}
+
+function getToolTargetIds(tool: ActionToolDefinition): string[] {
+  return (tool.validTargets ?? []).map((target) => target.id).filter((value) => value.trim().length > 0)
+}
+
+function getToolTargetIdsOrEnum(tool: ActionToolDefinition, parameterName: string): string[] {
+  const targetIds = getToolTargetIds(tool)
+  if (targetIds.length > 0) return targetIds
+  return getToolEnumValues(tool, parameterName)
+}
+
+function isPositiveInteger(value: string): boolean {
+  return /^\d+$/.test(value) && Number(value) > 0
+}
+
 function randomValidDecision(observation: TurnObservation): AgentDecision {
   const random = Math.random
-  const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
-  const equippedItemIds = Object.values(observation.inventory.equipped).filter(
-    (itemId): itemId is string => typeof itemId === "string" && itemId.length > 0
-  )
-  const equipableBagItems = Object.entries(observation.inventory.bag.items)
-    .filter(([, qty]) => qty > 0)
-    .map(([itemId]) => itemId)
-  const buyTargets = observation.merchantOffers.flatMap((merchant) =>
-    merchant.inventory
-      .filter((entry) => entry.stock > 0 && entry.buyPriceMarks >= 0)
-      .map((entry) => `${merchant.merchantId}:${entry.itemId}:1`)
-  )
-  const sellTargets = observation.merchantOffers.flatMap((merchant) =>
-    merchant.inventory
-      .filter((entry) => (observation.inventory.bag.items[entry.itemId] ?? 0) > 0)
-      .map((entry) => `${merchant.merchantId}:${entry.itemId}:1`)
-  )
-  const craftTargets = observation.craftingRecipes
-    .filter((recipe) =>
-      recipe.ingredients.every((ingredient) => (observation.inventory.bag.items[ingredient.itemId] ?? 0) >= ingredient.quantity)
-    )
-    .map((recipe) => recipe.id)
-  const resourceTargets = observation.resourceNodes.reduce<Record<string, string[]>>((acc, node) => {
-    acc[node.actionType] = [...(acc[node.actionType] ?? []), node.name]
-    return acc
-  }, {})
-  const safeActions = observation.availableActions.filter((actionName) => {
-    if (actionName === "eat") return foodCount > 0
-    if (actionName === "equip") return equipableBagItems.length > 0
-    if (actionName === "unequip") return equippedItemIds.length > 0
-    if (actionName === "rest") return true
-    if (actionName === "buy") return buyTargets.length > 0
-    if (actionName === "sell") return sellTargets.length > 0
-    if (actionName === "craft") return craftTargets.length > 0
-    if (["mine", "chop", "forage", "fish", "salvage"].includes(actionName)) return (resourceTargets[actionName]?.length ?? 0) > 0
-    return true
-  })
-  const moveCount = observation.knownExits.length
-  const actionCount = safeActions.length
-  const total = moveCount + actionCount
-  if (total === 0) {
-    return { action: "move", direction: "north", reason: "Fallback: no options returned by model." }
+  const tools = observation.actionTools ?? []
+  if (tools.length > 0) {
+    const chosenTool = tools[Math.floor(random() * tools.length)]
+    const reason = "Fallback: random available tool action."
+    if (chosenTool.name === "move") {
+      const directions = getToolTargetIdsOrEnum(chosenTool, "direction")
+      const direction = directions[Math.floor(random() * directions.length)] ?? observation.knownExits[0] ?? "north"
+      return { action: "move", direction, reason }
+    }
+    if (chosenTool.name === "search" || chosenTool.name === "attack" || chosenTool.name === "eat" || chosenTool.name === "rest") {
+      return { action: "action", actionName: chosenTool.name, reason }
+    }
+    if (
+      chosenTool.name === "inspect" ||
+      chosenTool.name === "talk" ||
+      chosenTool.name === "mine" ||
+      chosenTool.name === "chop" ||
+      chosenTool.name === "forage" ||
+      chosenTool.name === "fish" ||
+      chosenTool.name === "salvage"
+    ) {
+      const targets = getToolTargetIdsOrEnum(chosenTool, "target")
+      const target = targets[Math.floor(random() * targets.length)]
+      return { action: "action", actionName: chosenTool.name, target, reason }
+    }
+    if (chosenTool.name === "craft") {
+      const recipeIds = getToolTargetIdsOrEnum(chosenTool, "recipeId")
+      return { action: "action", actionName: "craft", target: recipeIds[Math.floor(random() * recipeIds.length)], reason }
+    }
+    if (chosenTool.name === "equip") {
+      const itemIds = getToolTargetIdsOrEnum(chosenTool, "itemId")
+      return { action: "action", actionName: "equip", target: itemIds[Math.floor(random() * itemIds.length)], reason }
+    }
+    if (chosenTool.name === "unequip" || chosenTool.name === "use") {
+      const itemIds = getToolTargetIdsOrEnum(chosenTool, "itemId")
+      return { action: "action", actionName: chosenTool.name, target: itemIds[Math.floor(random() * itemIds.length)], reason }
+    }
+    if (chosenTool.name === "buy" || chosenTool.name === "sell") {
+      const ids = getToolTargetIds(chosenTool)
+      const target = ids[Math.floor(random() * ids.length)]
+      return { action: "action", actionName: chosenTool.name, target, reason }
+    }
   }
-  const i = Math.floor(random() * total)
-  if (i < moveCount) {
+  if (observation.knownExits.length > 0) {
     return {
       action: "move",
-      direction: observation.knownExits[i],
+      direction: observation.knownExits[Math.floor(random() * observation.knownExits.length)],
       reason: "Fallback: random known exit.",
     }
   }
-  const actionName = safeActions[i - moveCount]
-  const target =
-    actionName === "inspect" && observation.discoveredPOIs.length > 0
-      ? observation.discoveredPOIs[Math.floor(random() * observation.discoveredPOIs.length)]
-      : actionName === "talk" && observation.talkTargets.length > 0
-        ? observation.talkTargets[Math.floor(random() * observation.talkTargets.length)]
-      : actionName === "equip" && equipableBagItems.length > 0
-        ? equipableBagItems[Math.floor(random() * equipableBagItems.length)]
-      : actionName === "unequip" && equippedItemIds.length > 0
-        ? equippedItemIds[Math.floor(random() * equippedItemIds.length)]
-      : actionName === "buy" && buyTargets.length > 0
-        ? buyTargets[Math.floor(random() * buyTargets.length)]
-      : actionName === "sell" && sellTargets.length > 0
-        ? sellTargets[Math.floor(random() * sellTargets.length)]
-      : actionName === "craft" && craftTargets.length > 0
-        ? craftTargets[Math.floor(random() * craftTargets.length)]
-      : resourceTargets[actionName]?.length
-        ? resourceTargets[actionName][Math.floor(random() * resourceTargets[actionName].length)]
-      : undefined
-  return {
-    action: "action",
-    actionName,
-    target,
-    reason: "Fallback: random available action.",
-  }
+  return { action: "move", direction: "north", reason: "Fallback: no options returned by model." }
 }
 
 function isValidDecision(decision: AgentDecision, observation: TurnObservation): boolean {
-  const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
   if (decision.action === "move") {
-    return !!decision.direction && observation.knownExits.includes(decision.direction)
+    const moveTool = getToolByName(observation, "move")
+    if (!moveTool || !decision.direction) return false
+    return getToolTargetIdsOrEnum(moveTool, "direction").includes(decision.direction)
   }
   if (decision.action === "action") {
-    if (!decision.actionName || !observation.availableActions.includes(decision.actionName)) {
+    if (!decision.actionName) {
       return false
     }
-    if (decision.actionName === "eat" && foodCount <= 0) {
+    const tool = getToolByName(observation, decision.actionName)
+    if (!tool) {
       return false
     }
-    if (decision.actionName === "equip") {
-      return typeof decision.target === "string" && decision.target.trim().length > 0
-    }
-    if (decision.actionName === "unequip") {
-      return typeof decision.target === "string" && decision.target.trim().length > 0
-    }
-    if (decision.actionName === "rest") {
+    if (decision.actionName === "search" || decision.actionName === "attack" || decision.actionName === "eat" || decision.actionName === "rest") {
       return true
     }
-    if (decision.actionName === "buy" || decision.actionName === "sell") {
-      return typeof decision.target === "string" && decision.target.trim().split(":").length >= 2
+    const target = decision.target?.trim()
+    if (!target) {
+      return false
+    }
+    if (
+      decision.actionName === "inspect" ||
+      decision.actionName === "talk" ||
+      decision.actionName === "mine" ||
+      decision.actionName === "chop" ||
+      decision.actionName === "forage" ||
+      decision.actionName === "fish" ||
+      decision.actionName === "salvage"
+    ) {
+      return getToolTargetIdsOrEnum(tool, "target").includes(target)
     }
     if (decision.actionName === "craft") {
-      return typeof decision.target === "string" && decision.target.trim().length > 0
+      return getToolTargetIdsOrEnum(tool, "recipeId").includes(target)
     }
-    if (["mine", "chop", "forage", "fish", "salvage"].includes(decision.actionName)) {
-      return typeof decision.target === "string" && decision.target.trim().length > 0
+    if (decision.actionName === "equip") {
+      const [itemId] = target.split(":")
+      return getToolTargetIdsOrEnum(tool, "itemId").includes(itemId)
     }
-    return true
+    if (decision.actionName === "unequip" || decision.actionName === "use") {
+      return getToolTargetIdsOrEnum(tool, "itemId").includes(target)
+    }
+    if (decision.actionName === "buy" || decision.actionName === "sell") {
+      const [merchantId, itemId, quantity] = target.split(":")
+      if (!merchantId || !itemId) return false
+      if (quantity && !isPositiveInteger(quantity)) return false
+      const validPairs = getToolTargetIds(tool)
+      return validPairs.some((pair) => {
+        const [validMerchantId, validItemId] = pair.split(":")
+        return merchantId === validMerchantId && itemId === validItemId
+      })
+    }
+    return false
   }
   return false
 }
@@ -252,10 +273,12 @@ function getQuantityArg(args: Record<string, unknown>): number {
   return Math.max(1, Math.floor(value))
 }
 
-function decisionFromToolCall(toolCall: ToolCallResult): AgentDecision | null {
+function decisionFromToolCall(toolCall: ToolCallResult, observation: TurnObservation): AgentDecision | null {
+  const matchedTool = getToolByName(observation, toolCall.name)
+  if (!matchedTool) return null
   const args = toolCall.arguments
   const reason = getStringArg(args, "reason")
-  const name = toolCall.name as ActionToolName
+  const name = matchedTool.name
   if (name === "move") {
     const direction = getStringArg(args, "direction")
     return direction ? { action: "move", direction, reason } : null
@@ -411,13 +434,24 @@ function formatToolSummary(tools: ActionToolDefinition[]): string {
   return tools
     .map((tool) => {
       const targets = tool.validTargets?.length
-        ? ` targets=${tool.validTargets
-            .slice(0, 12)
-            .map((target) => target.id)
-            .join(", ")}`
+        ? ` targets: ${tool.validTargets
+          .slice(0, 8)
+          .map((target) => target.id)
+          .join(", ")}`
         : ""
       const payment = tool.requiresPayment ? " paid" : " free"
-      return `- ${tool.name}:${payment}.${targets}`
+      const turnCost = tool.consumesTurn ? "consumes turn" : "no turn cost"
+      return `- ${tool.name} (${payment.trim()}, ${turnCost}): ${tool.description}${targets}`
+    })
+    .join("\n")
+}
+
+function formatAvailableActionSubtext(observation: TurnObservation): string {
+  if (observation.availableActions.length === 0) return "none"
+  return observation.availableActions
+    .map((actionName) => {
+      const tool = getToolByName(observation, actionName)
+      return `- ${actionName}: ${tool?.description ?? "Available this turn."}`
     })
     .join("\n")
 }
@@ -456,6 +490,7 @@ export async function decideAction(
   const equippedItems = Object.entries(observation.inventory.equipped)
     .map(([slot, itemId]) => `${slot}:${itemId ?? "empty"}`)
     .join(", ")
+  const hasHandItemEquipped = !!observation.inventory.equipped.leftHand || !!observation.inventory.equipped.rightHand
   const activeQuestText = observation.activeQuest
     ? `${observation.activeQuest.npcName} (${observation.activeQuest.npcRoomId}) | ${observation.activeQuest.questType} | retrieve ${observation.activeQuest.requiredItemId} | status: ${observation.activeQuest.status}`
     : "none"
@@ -476,17 +511,22 @@ export async function decideAction(
   const merchantOffersText =
     observation.merchantOffers.length > 0
       ? observation.merchantOffers
-          .map((merchant) => {
-            const listing = merchant.inventory
-              .map(
-                (entry) =>
-                  `${entry.itemId} stock ${entry.stock}/${entry.maxStock} buy ${entry.buyPriceMarks} sell ${entry.sellPriceMarks}`
-              )
-              .join(", ")
-            return `${merchant.merchantName} [${merchant.merchantId}] marks=${merchant.balanceMarks} :: ${listing}`
-          })
-          .join("\n")
+        .map((merchant) => {
+          const listing = merchant.inventory
+            .map(
+              (entry) =>
+                `${entry.itemId} stock ${entry.stock}/${entry.maxStock} buy ${entry.buyPriceMarks} sell ${entry.sellPriceMarks}`
+            )
+            .join(", ")
+          return `${merchant.merchantName} [${merchant.merchantId}] marks=${merchant.balanceMarks} :: ${listing}`
+        })
+        .join("\n")
       : "none"
+  const affordableMerchantItems = observation.merchantOffers.flatMap((merchant) =>
+    merchant.inventory
+      .filter((entry) => entry.stock > 0 && entry.buyPriceMarks <= observation.marks)
+      .map((entry) => `${entry.itemId} from ${merchant.merchantName} [${merchant.merchantId}] for ${entry.buyPriceMarks} marks`)
+  )
   const conditionText = observation.conditions.length > 0 ? observation.conditions.join(", ") : "none"
 
   const prompt = `You are an explorer in the world of Idacron. Survival is key. Fame, glory and riches will only go to those who survive.
@@ -508,12 +548,17 @@ Marks: ${observation.marks}
 Bag slots: ${observation.inventory.bag.usedSlots}/${observation.inventory.bag.maxSlots}
 Items: ${inventoryItems || "none"}
 Equipped: ${equippedItems}
+Hand weapon or tool equipped: ${hasHandItemEquipped ? "yes" : "no"}
 Merchant offers:
 ${merchantOffersText}
+Affordable shop items:
+${affordableMerchantItems.length > 0 ? affordableMerchantItems.join("\n") : "none"}
 
 Visited rooms: ${observation.visitedRooms.join(", ") || "none"}
 Known exits: ${availableMoves}
 Unexplored exits from here: ${unexploredExits}
+Available actions (with subtext):
+${formatAvailableActionSubtext(observation)}
 Discovered things to inspect: ${discoveredThings}
 Talk targets here: ${talkTargets}
 Active quest: ${activeQuestText}
@@ -534,21 +579,34 @@ Available action tools:
 ${formatToolSummary(actionTools)}
 
 Rules:
-- Prioritize survival when stamina is low and food is available.
-- If fatigued, prioritize eating or resting when safe.
-- Prefer discovering new information (searching unexplored rooms and taking unexplored exits).
-- If search is available and current room search is not exhausted, strongly prefer search before backtracking moves.
-- Prefer inspect/search/talk actions that can reveal new information before taking already-known return paths.
-- Treat movement and room actions as equally valid choices.
-- Prefer unexplored exits over previously taken return paths when choosing movement.
-- If discovered things exist, inspect them before leaving when safe.
-- If talk targets are present and no active quest, talk to an NPC.
-- Quest givers will not give more information after the first time you talk to them.
-- If active quest is retrieval, prioritize finding the item and then immediately returning it to the quest giver room.
-- If active combat is present, prioritize attack until combat ends.
-- If combat target is locked by another agent, avoid attack spam and choose another valid non-combat action.
-- Avoid loops and repeated no-progress actions.
-- Use exactly one available action tool.`
+
+Survival priorities:
+- Stay alive. If health is low, avoid unnecessary combat when possible.
+- Stamina matters. If stamina is low or fatigued, eat if you have food, or rest if safe.
+- If active combat is present, usually attack until combat ends unless the target is locked by another agent.
+- Weapons and armor are very useful for survival and progress.
+
+Exploration priorities:
+- Prefer actions that reveal new information: search, inspect, talk, and unexplored exits.
+- Search rooms that are not exhausted before repeatedly backtracking.
+- Inspect discovered points of interest before leaving if it seems safe.
+- Prefer unexplored exits over known return paths when survival is stable.
+
+Preparation priorities:
+- If you are in a shop, have marks, and do not have anything equipped in hand, consider buying a useful affordable weapon or tool before leaving.
+- After buying useful gear such as a weapon or armor, equip it before dangerous exploration.
+- Prioritize essentials you lack: food, a weapon, armor, or tools that unlock nearby resources.
+- Do not spend all marks unless the purchase clearly improves survival or progress.
+- If merchant offers are already visible, do not talk to the merchant just to relist inventory; buy/sell if preparing, otherwise choose another progress action.
+
+Quest priorities:
+- If you have an active retrieval quest, look for the required item.
+- Once you have the required quest item, return to the quest giver and talk to them.
+- Quest givers usually do not repeat useful information after the first conversation.
+
+Decision rule:
+- Choose exactly one available action tool.
+- Avoid repeated no-progress actions and loops.`
 
   let decision: AgentDecision | null = null
   let responseId: string | undefined
@@ -560,14 +618,13 @@ Rules:
           instructions: "Choose exactly one available AgentQuest action by calling one tool.",
           input: prompt,
           tools: toOpenAiTools(actionTools) as never,
+          tool_choice: "required",
           max_output_tokens: 220,
           store: true,
         })
         const toolCall = getToolCall(response)
-        if (toolCall) decision = decisionFromToolCall(toolCall)
-        const content = response.output_text
-        if (!decision && content) {
-          decision = parseDecision(content)
+        if (toolCall) {
+          decision = decisionFromToolCall(toolCall, observation)
           responseId = response.id
         }
         break
@@ -652,7 +709,7 @@ ${lastSessionLogbookText || "No turn log available."}
     const completion = await openai.chat.completions.create({
       model: MODEL,
       messages: [{ role: "user", content: prompt }],
-      max_completion_tokens: 260,
+      max_completion_tokens: 1024,
     })
     const content = completion.choices[0]?.message?.content?.trim()
     return content || fallback
