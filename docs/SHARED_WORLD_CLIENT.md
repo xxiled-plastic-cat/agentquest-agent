@@ -1,14 +1,8 @@
 # Shared World Client Guide
 
-This document explains how the agent runtime should behave against the shared-world, tick-based world service.
+This document explains how the agent runtime behaves against the shared-world, tick-based world service.
 
-## What Changed
-
-The world service now resolves actions on a global tick queue and can reject/defer contested enemy interactions.
-
-The agent client receives extra metadata in step responses and observations to reason about shared-state concurrency.
-
-## Protocol Fields Used by Agent
+## Protocol fields
 
 `SessionStepResponse`:
 
@@ -20,46 +14,53 @@ The agent client receives extra metadata in step responses and observations to r
 `TurnObservation`:
 
 - `worldTick`
-- `activeCombat` now includes:
-  - `npcId`
-  - `lockedByAnotherAgent`
-  - HP/AC values
+- `actionTools` (includes `requiresPayment`, `validTargets`)
+- `craftingRecipes`, `resourceNodes`, `merchantOffers`
+- `activeCombat` includes `npcId`, `lockedByAnotherAgent`, HP/AC values
 
-These are represented in:
+These are represented in `src/types.ts`.
 
-- `src/types.ts`
+## Implemented main-loop behavior (Phase 1)
 
-## Prompting / Decision Behavior
+[`src/main.ts`](../src/main.ts) and [`src/llm.ts`](../src/llm.ts):
 
-`src/llm.ts` prompt now includes:
+1. **Intent metadata** — after every step, the runner logs `intentAccepted`, `rejectReason`, and `fallbackApplied`, and feeds them into the next `decideAction` via `DecisionContext`.
+2. **Rejected intents** — when `intentAccepted` is false, the next prompt includes shared-world feedback so the model avoids immediately repeating the same rejected action.
+3. **Combat locks** — if `activeCombat.lockedByAnotherAgent` is true, `attack` is removed from selectable tools (LLM + random fallback).
+4. **Responses chaining** — successful tool decisions pass `previous_response_id` on the next turn; fallback/random decisions clear the chain. Empty ZeroSignal ids are ignored.
+5. **Prompt surface** — crafting recipes, resource nodes, merchant offers, and quest/combat state are included explicitly.
+6. **Economy (Phase 0)** — NPC buy uses marks; NPC sell is deprecated in guidance; x402 marketplace is out of scope for the free loop.
+7. **Inference (Phase 3)** — `OPENAI_BASE_URL` → zs-proxy `/v1`, placeholder `OPEN_AI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT` (brownie-bot pattern). `npm run smoke:llm` checks proxy connectivity.
 
-- current world tick
-- combat lock context for active combat target
+## Session create
 
-Guidance includes:
+Optional `initialRoom` is supported:
 
-- if combat target is locked by another agent, avoid repeated invalid attack attempts and choose another valid action
+```bash
+npm start -- --initial-room=SH001
+```
 
-## Runtime Logging
+Harness scenarios use this to spawn near merchants, hostiles, or quest rooms.
 
-`src/main.ts` now prints:
+## Free-loop verification
 
-- local turn + world tick (`TURN X (WORLD TICK Y)`)
-- dynamic health/max health
+Deterministic multi-scenario harness (no OpenAI key):
 
-This helps diagnose queue/tick timing effects in concurrent runs.
+```bash
+# world must be running at WORLD_BASE_URL (default http://localhost:8787)
+npm run verify:free-loop
+```
 
-## Recommended Client Handling
+Covers quest, NPC buy (marks), equip/unequip, craft, gather, eat/rest, combat (+ best-effort lock), and chronicle writeback.
 
-When integrating additional client logic, handle response metadata explicitly:
+Quest-only smoke remains:
 
-1. If `intentAccepted` is `false`, inspect `rejectReason` and decide retry/backoff strategy.
-2. If `fallbackApplied` is `true`, treat the step as server-corrected and avoid repeating invalid choice patterns.
-3. Use `worldTick` for debugging and optional pacing controls.
-4. Respect `lockedByAnotherAgent` in combat planning to reduce contention loops.
+```bash
+npm run verify:world
+```
 
-## Operational Tips
+## Operational tips
 
-- Run multiple agent processes against the same world service to test contention behavior.
-- Keep deterministic seeds where possible during load/concurrency tests.
-- Prefer resilient loops that can handle stale or contested outcomes without crashing.
+- Run multiple agent processes against the same world service to exercise combat locks.
+- Keep deterministic seeds for harness and concurrency checks.
+- Prefer resilient loops that handle contested outcomes without crashing.

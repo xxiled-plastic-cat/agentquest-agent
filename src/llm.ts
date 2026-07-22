@@ -10,13 +10,38 @@ import type {
   TurnObservation,
 } from "./types.js"
 
-const apiKey = process.env.OPENAI_API_KEY?.trim()
-const openai = apiKey ? new OpenAI({ apiKey }) : null
-const MODEL = process.env.MODEL ?? "gpt-4.1-mini"
+const DEFAULT_ZS_BASE_URL = "http://127.0.0.1:8080/v1"
+const DEFAULT_ZS_MODEL = "Qwen/Qwen3-Coder-480B-A35B-Instruct"
+
+/** ZeroSignal only — OpenAI SDK talks to zs-proxy; key is a placeholder. */
+const baseURL = process.env.OPENAI_BASE_URL?.trim() || DEFAULT_ZS_BASE_URL
+const apiKey = process.env.OPEN_AI_API_KEY?.trim() || "zerosignal"
+const MODEL = process.env.OPENAI_MODEL?.trim() || DEFAULT_ZS_MODEL
+const openai = new OpenAI({ apiKey, baseURL })
+
+type ReasoningEffort = "low" | "medium" | "high"
+function parseReasoningEffort(raw: string | undefined): ReasoningEffort {
+  const value = raw?.trim().toLowerCase()
+  if (value === "low" || value === "medium" || value === "high") return value
+  return "medium"
+}
+const REASONING_EFFORT = parseReasoningEffort(process.env.OPENAI_REASONING_EFFORT)
+
 const RATE_LIMIT_MAX_RETRIES = parseInt(process.env.RATE_LIMIT_MAX_RETRIES ?? "2", 10)
 const RATE_LIMIT_DEFAULT_WAIT_MS = 4000
 const FOOD_ITEM_ID = "ration"
 const TREASURE_ITEM_ID = "coin_pouch"
+
+/** ZeroSignal may return an empty top-level response id; treat as missing. */
+function normalizeResponseId(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined
+  const id = raw.trim()
+  return id.length > 0 ? id : undefined
+}
+
+function reasoningPayload(): { reasoning: { effort: ReasoningEffort } } {
+  return { reasoning: { effort: REASONING_EFFORT } }
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -121,9 +146,17 @@ function isPositiveInteger(value: string): boolean {
   return /^\d+$/.test(value) && Number(value) > 0
 }
 
+function selectableActionTools(observation: TurnObservation): ActionToolDefinition[] {
+  const tools = observation.actionTools ?? []
+  if (observation.activeCombat?.lockedByAnotherAgent) {
+    return tools.filter((tool) => tool.name !== "attack")
+  }
+  return tools
+}
+
 function randomValidDecision(observation: TurnObservation): AgentDecision {
   const random = Math.random
-  const tools = observation.actionTools ?? []
+  const tools = selectableActionTools(observation)
   if (tools.length > 0) {
     const chosenTool = tools[Math.floor(random() * tools.length)]
     const reason = "Fallback: random available tool action."
@@ -504,7 +537,7 @@ export async function decideAction(
     .includes(observation.currentRoom)
   const memoryLastSession = observation.lastSessionLogbook || "No previous session logbook."
   const memoryQuestbook = observation.questbook || "No questbook entries yet."
-  const actionTools = observation.actionTools ?? []
+  const actionTools = selectableActionTools(observation)
 
   const foodCount = observation.inventory.bag.items[FOOD_ITEM_ID] ?? 0
   const treasureCount = observation.inventory.bag.items[TREASURE_ITEM_ID] ?? 0
@@ -528,6 +561,39 @@ export async function decideAction(
       .map((entry) => `${entry.itemId} from ${merchant.merchantName} [${merchant.merchantId}] for ${entry.buyPriceMarks} marks`)
   )
   const conditionText = observation.conditions.length > 0 ? observation.conditions.join(", ") : "none"
+  const craftingRecipesText =
+    observation.craftingRecipes.length > 0
+      ? observation.craftingRecipes
+          .map((recipe) => {
+            const ingredients = recipe.ingredients
+              .map((ingredient) => `${ingredient.itemId} x${ingredient.quantity}`)
+              .join(", ")
+            return `${recipe.id} (${recipe.name}) -> ${recipe.outputItemId} x${recipe.outputQuantity} | needs ${ingredients}`
+          })
+          .join("\n")
+      : "none"
+  const resourceNodesText =
+    observation.resourceNodes.length > 0
+      ? observation.resourceNodes
+          .map((node) => `${node.name} [${node.id}] action=${node.actionType}`)
+          .join("\n")
+      : "none"
+  const sharedWorldFeedback: string[] = []
+  if (context?.lastIntentAccepted === false) {
+    sharedWorldFeedback.push(
+      `Last intent was rejected${context.lastRejectReason ? `: ${context.lastRejectReason}` : "."}`
+    )
+  }
+  if (context?.lastFallbackApplied) {
+    sharedWorldFeedback.push("Last step used world fallback validation; avoid repeating invalid choices.")
+  }
+  if (observation.activeCombat?.lockedByAnotherAgent) {
+    sharedWorldFeedback.push(
+      "Active combat target is locked by another agent; do not attack — choose another valid action."
+    )
+  }
+  const sharedWorldText =
+    sharedWorldFeedback.length > 0 ? sharedWorldFeedback.map((line) => `- ${line}`).join("\n") : "- none"
 
   const prompt = `You are an explorer in the world of Idacron. Survival is key. Fame, glory and riches will only go to those who survive.
 
@@ -553,6 +619,10 @@ Merchant offers:
 ${merchantOffersText}
 Affordable shop items:
 ${affordableMerchantItems.length > 0 ? affordableMerchantItems.join("\n") : "none"}
+Crafting recipes:
+${craftingRecipesText}
+Resource nodes here:
+${resourceNodesText}
 
 Visited rooms: ${observation.visitedRooms.join(", ") || "none"}
 Known exits: ${availableMoves}
@@ -563,6 +633,8 @@ Discovered things to inspect: ${discoveredThings}
 Talk targets here: ${talkTargets}
 Active quest: ${activeQuestText}
 Active combat: ${activeCombatText}
+Shared-world feedback:
+${sharedWorldText}
 Rooms where search found nothing: ${observation.roomsSearchExhausted}
 Current room search exhausted: ${currentRoomSearchExhausted ? "yes" : "no"}
 Rooms with unexplored exits:\n${observation.roomsWithUnexploredExits}
@@ -584,6 +656,7 @@ Survival priorities:
 - Stay alive. If health is low, avoid unnecessary combat when possible.
 - Stamina matters. If stamina is low or fatigued, eat if you have food, or rest if safe.
 - If active combat is present, usually attack until combat ends unless the target is locked by another agent.
+- If the combat target is locked by another agent, do not attack; choose another valid progress action.
 - Weapons and armor are very useful for survival and progress.
 
 Exploration priorities:
@@ -591,18 +664,24 @@ Exploration priorities:
 - Search rooms that are not exhausted before repeatedly backtracking.
 - Inspect discovered points of interest before leaving if it seems safe.
 - Prefer unexplored exits over known return paths when survival is stable.
+- Use resource nodes (mine/chop/forage/fish/salvage) when you have the required tool and need materials.
 
 Preparation priorities:
 - If you are in a shop, have marks, and do not have anything equipped in hand, consider buying a useful affordable weapon or tool before leaving.
 - After buying useful gear such as a weapon or armor, equip it before dangerous exploration.
 - Prioritize essentials you lack: food, a weapon, armor, or tools that unlock nearby resources.
 - Do not spend all marks unless the purchase clearly improves survival or progress.
-- If merchant offers are already visible, do not talk to the merchant just to relist inventory; buy/sell if preparing, otherwise choose another progress action.
+- If merchant offers are already visible, do not talk to the merchant just to relist inventory; buy with marks if preparing, otherwise choose another progress action.
+- Do not sell items to NPC merchants (NPC sell is deprecated).
 
 Quest priorities:
 - If you have an active retrieval quest, look for the required item.
 - Once you have the required quest item, return to the quest giver and talk to them.
 - Quest givers usually do not repeat useful information after the first conversation.
+
+Shared-world priorities:
+- If the last intent was rejected, do not immediately retry the same rejected action; pick a different valid tool.
+- Avoid attack spam when lockedByAnother=yes.
 
 Decision rule:
 - Choose exactly one available action tool.
@@ -610,7 +689,7 @@ Decision rule:
 
   let decision: AgentDecision | null = null
   let responseId: string | undefined
-  if (openai && actionTools.length > 0) {
+  if (actionTools.length > 0) {
     for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt += 1) {
       try {
         const response = await openai.responses.create({
@@ -621,11 +700,24 @@ Decision rule:
           tool_choice: "required",
           max_output_tokens: 220,
           store: true,
+          ...reasoningPayload(),
+          ...(context?.previousResponseId
+            ? { previous_response_id: context.previousResponseId }
+            : {}),
         })
         const toolCall = getToolCall(response)
         if (toolCall) {
           decision = decisionFromToolCall(toolCall, observation)
-          responseId = response.id
+          if (decision && isValidDecision(decision, observation)) {
+            // Only chain from a successfully accepted tool decision.
+            if (decision.actionName === "attack" && observation.activeCombat?.lockedByAnotherAgent) {
+              decision = null
+            } else {
+              responseId = normalizeResponseId((response as { id?: unknown }).id)
+            }
+          } else {
+            decision = null
+          }
         }
         break
       } catch (err) {
@@ -639,18 +731,19 @@ Decision rule:
           await sleep(retryDelayMs)
           continue
         }
-        console.error("LLM request failed:", err)
+        console.error("LLM request failed (zs-proxy / ZeroSignal):", err)
         break
       }
     }
-  } else if (!openai) {
-    console.warn("OPENAI_API_KEY not set; using fallback random decisions.")
   }
 
   if (decision && isValidDecision(decision, observation)) {
-    return { decision, responseId }
+    if (!(decision.actionName === "attack" && observation.activeCombat?.lockedByAnotherAgent)) {
+      return { decision, responseId }
+    }
   }
-  return { decision: randomValidDecision(observation), responseId }
+  // Fallback path: do not continue the Responses chain from a failed/partial turn.
+  return { decision: randomValidDecision(observation), responseId: undefined }
 }
 
 function bulletList(values: string[]): string {
@@ -667,10 +760,6 @@ export async function generateQuestChronicle(
     `Day ${day}. ${entry.endReason === "death" ? "I fell before nightfall." : "I endured another hard day."}`,
     `Turns: ${entry.turns}. Exploration points: ${entry.explorationPoints}. Exits discovered: ${entry.exitsDiscovered}.`,
   ].join(" ")
-
-  if (!openai) {
-    return fallback
-  }
 
   const playerInstructions =
     typeof config.instructions === "string" && config.instructions.trim()
@@ -706,15 +795,41 @@ ${lastSessionLogbookText || "No turn log available."}
 `
 
   try {
-    const completion = await openai.chat.completions.create({
+    // Prefer Responses API so zs-proxy / ZeroSignal works the same as decideAction.
+    const response = await openai.responses.create({
       model: MODEL,
-      messages: [{ role: "user", content: prompt }],
-      max_completion_tokens: 1024,
+      instructions: "Write a short fantasy quest chronicle. Plain text only.",
+      input: prompt,
+      max_output_tokens: 1024,
+      ...reasoningPayload(),
     })
-    const content = completion.choices[0]?.message?.content?.trim()
+    const content =
+      (typeof (response as { output_text?: string }).output_text === "string" &&
+        (response as { output_text?: string }).output_text?.trim()) ||
+      extractOutputText((response as { output?: unknown[] }).output)
     return content || fallback
   } catch (err) {
     console.error("Quest chronicle generation failed:", err)
     return fallback
   }
+}
+
+function extractOutputText(output: unknown): string {
+  if (!Array.isArray(output)) return ""
+  const parts: string[] = []
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue
+    const row = item as { type?: string; content?: unknown[]; text?: string }
+    if (typeof row.text === "string" && row.text.trim()) {
+      parts.push(row.text.trim())
+      continue
+    }
+    if (!Array.isArray(row.content)) continue
+    for (const block of row.content) {
+      if (!block || typeof block !== "object") continue
+      const text = (block as { text?: string }).text
+      if (typeof text === "string" && text.trim()) parts.push(text.trim())
+    }
+  }
+  return parts.join("\n").trim()
 }

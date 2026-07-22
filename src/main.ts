@@ -8,7 +8,7 @@ import {
   setQuestbookChronicle,
   stepSession,
 } from "./world-client.js"
-import type { AgentConfig } from "./types.js"
+import type { AgentConfig, DecisionContext } from "./types.js"
 
 const WORLD_BASE_URL = process.env.WORLD_BASE_URL ?? "http://localhost:8787"
 const MAX_STEPS = parseInt(process.env.MAX_STEPS ?? "80", 10)
@@ -39,10 +39,19 @@ function parseAgentInstanceId(): string | undefined {
   return undefined
 }
 
+function parseInitialRoom(): string | undefined {
+  const withEquals = process.argv.find((a) => a.startsWith("--initial-room="))
+  if (withEquals) return withEquals.slice("--initial-room=".length).trim() || undefined
+  const idx = process.argv.indexOf("--initial-room")
+  if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1].trim()
+  return undefined
+}
+
 function printStartup(
   config: AgentConfig,
   configPath: string | undefined,
-  agentInstanceId?: string
+  agentInstanceId?: string,
+  initialRoom?: string
 ): void {
   console.log("")
   console.log("=== AgentQuest Agent Client ===")
@@ -52,6 +61,9 @@ function printStartup(
   if (agentInstanceId) {
     console.log(`Agent Instance: ${agentInstanceId}`)
   }
+  if (initialRoom) {
+    console.log(`Initial room: ${initialRoom}`)
+  }
   console.log("")
 }
 
@@ -59,16 +71,25 @@ async function run(): Promise<void> {
   const configPath = parseConfigPath()
   const seed = parseSeed()
   const agentInstanceId = parseAgentInstanceId()
+  const initialRoom = parseInitialRoom()
   const config = loadAgentConfig(configPath)
   const walletAuth = loadWalletAuthConfig()
   const worldAuth = new WorldSessionAuth(WORLD_BASE_URL, walletAuth)
   const classStrategies = loadClasses()
-  printStartup(config, configPath, agentInstanceId)
+  printStartup(config, configPath, agentInstanceId, initialRoom)
 
-  const created = await createSession(WORLD_BASE_URL, config, worldAuth, seed, agentInstanceId)
+  const created = await createSession(
+    WORLD_BASE_URL,
+    config,
+    worldAuth,
+    seed,
+    agentInstanceId,
+    initialRoom
+  )
   let sessionId = created.sessionId
   let observation = created.observation
   let previousResponseId: string | undefined
+  let decisionContext: DecisionContext = {}
 
   console.log(`Session: ${sessionId}`)
   console.log(`Agent Instance ID: ${created.agentInstanceId}`)
@@ -77,11 +98,18 @@ async function run(): Promise<void> {
   while (!observation.terminal && steps < MAX_STEPS) {
     const decisionResult = await decideAction(observation, config, classStrategies, {
       previousResponseId,
+      ...decisionContext,
     })
     previousResponseId = decisionResult.responseId
     const stepResult = await stepSession(WORLD_BASE_URL, sessionId, decisionResult.decision, worldAuth)
     observation = stepResult.observation
     steps += 1
+
+    decisionContext = {
+      lastIntentAccepted: stepResult.intentAccepted,
+      lastRejectReason: stepResult.rejectReason,
+      lastFallbackApplied: stepResult.fallbackApplied,
+    }
 
     console.log("")
     console.log(`TURN ${observation.turn} (WORLD TICK ${observation.worldTick})`)
@@ -95,8 +123,16 @@ async function run(): Promise<void> {
     )
     console.log(`RESULT ${stepResult.lastResult}`)
     if (decisionResult.decision.reason) console.log(`REASON ${decisionResult.decision.reason}`)
+    console.log(
+      `INTENT ${stepResult.intentAccepted ? "accepted" : "rejected"}${
+        stepResult.rejectReason ? ` (${stepResult.rejectReason})` : ""
+      }`
+    )
     if (stepResult.fallbackApplied) {
       console.log("NOTE World service applied fallback validation.")
+    }
+    if (!stepResult.intentAccepted) {
+      console.log("NOTE Intent was not accepted; observation may be unchanged for this step.")
     }
   }
 

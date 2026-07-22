@@ -9,7 +9,10 @@
     "start": "node dist/main.js",
     "dev": "tsc && node dist/main.js",
     "test:paid-buy": "npm run build && node dist/paid-buy-test.js",
-    "verify:world": "node scripts/verify-world-run.mjs"
+    "verify:world": "node scripts/verify-world-run.mjs",
+    "verify:free-loop": "node scripts/verify-free-loop.mjs",
+    "verify:coverage-circuit": "node scripts/verify-coverage-circuit.mjs",
+    "smoke:llm": "node scripts/smoke-llm.mjs"
   },
   "dependencies": {
     "algosdk": "^3.5.2",

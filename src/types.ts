@@ -85,6 +85,9 @@ export interface AgentDecision {
 
 export interface DecisionContext {
   previousResponseId?: string
+  lastIntentAccepted?: boolean
+  lastRejectReason?: string
+  lastFallbackApplied?: boolean
 }
 
 export interface DecisionResult {

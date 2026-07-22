@@ -89,14 +89,21 @@ export async function createSession(
   config: AgentConfig,
   auth: WorldSessionAuth,
   seed?: number,
-  agentInstanceId?: string
+  agentInstanceId?: string,
+  initialRoom?: string
 ): Promise<SessionCreateResponse> {
   return fetchWorldJson<SessionCreateResponse>(
     `${worldBaseUrl}/sessions`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentId: config.name, agentInstanceId, config, seed }),
+      body: JSON.stringify({
+        agentId: config.name,
+        agentInstanceId,
+        config,
+        seed,
+        ...(initialRoom ? { initialRoom } : {}),
+      }),
     },
     "World create session failed",
     auth
